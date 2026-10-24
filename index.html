@@ -131,7 +131,7 @@ function sigHtml(sig){const p=sig.p;return `<div class="sig">${sig.pre?`<div sty
  <table><tr><td>Entrada</td><td>${fmt(p.e)}</td></tr><tr><td>Stop loss</td><td>${fmt(p.stop)} (${p.pct.toFixed(2)}%)</td></tr>
  <tr><td>TP1 (50% da posição)</td><td>${fmt(p.tp1)}</td></tr><tr><td>TP2</td><td>${fmt(p.tp2)}</td></tr>
  <tr><td>R/R médio</td><td>1:${p.rr.toFixed(2)}</td></tr><tr><td>Posição (risco 1%)</td><td>${p.pos?fmt(p.pos)+" USDT":"informe o saldo"}</td></tr></table>
- <div class="mut" style="margin-top:6px">Confirme manualmente e mova o stop para a entrada após o TP1.</div></div>`}
+ <div class="drift" data-s="${sig.sym}" data-e="${p.e}" data-l="${sig.lado}" style="margin-top:6px;font-size:13px"></div><div class="mut" style="margin-top:6px">Confirme manualmente e mova o stop para a entrada após o TP1.</div></div>`}
 
 async function scan(pre){if(busy)return;busy=true;$("go").disabled=true;$("upd").textContent="Analisando…";
  const s=load(),res=await Promise.all(CFG.symbols.map(async sym=>{try{const d={};
@@ -144,13 +144,13 @@ async function scan(pre){if(busy)return;busy=true;$("go").disabled=true;$("upd")
   let sig=null,aviso="";
   if(melhor&&melhor.score>=CFG.scoreMin){const marca=last(r.d["15m"]).t,p=plano(melhor.lado,r.d),novo=s.ultimo[r.sym]!==marca;
    if(!p)aviso="Score ok, mas stop/R-R não passa nos filtros. Aguardar.";
-   else if(!novo||!bloqueio(s)){sig={...melhor,p,pre,fecha:marca+9e5};
+   else if(!novo||!bloqueio(s)){sig={...melhor,p,pre,fecha:marca+9e5,sym:r.sym};
     if(pre){avisaPre(r.sym,melhor,p,marca+9e5)}else if(novo){s.ultimo[r.sym]=marca;s.sinais++;save(s);addHist(r.sym,melhor,p);notify(`${r.sym} ${melhor.lado=="long"?"COMPRA":"VENDA"} ${melhor.score}/100`,`Entrada ${hm(marca+9e5)} a ${fmt(p.e)} | Stop ${fmt(p.stop)} | TP1 ${fmt(p.tp1)}`)}}}
   else{const f=melhor?melhor.it.filter(i=>i[1]<i[2]).map(i=>`${i[0]} (${i[1]}/${i[2]})`):[];
    aviso=(melhor&&melhor.score>=70?`Quase sinal (${melhor.score}/${CFG.scoreMin}). `:"")+"Sem entrada — aguardar. Falta: "+(f.join(", ")||"EMA200 a favor")}
-  html+=`<div class="card"><div style="display:flex;justify-content:space-between"><h2>${r.sym.slice(0,-4)}/${r.sym.slice(-4)}</h2><span>${fmt(last(r.d["15m"]).c)}</span></div>
+  html+=`<div class="card"><div style="display:flex;justify-content:space-between"><h2>${r.sym.slice(0,-4)}/${r.sym.slice(-4)}</h2><span class="px" data-s="${r.sym}">${fmt(LIVE[r.sym]||last(r.d["15m"]).c)}</span></div><div class="mut" style="font-size:12px">Preço ao vivo · análise do candle de 15 min ${pre?"em formação, fecha":"fechado"} às ${hm(last(r.d["15m"]).t+9e5)} (${fmt(last(r.d["15m"]).c)})</div>
   ${ladoHtml("Compra",L.long)}${ladoHtml("Venda",L.short)}${sig?sigHtml(sig):`<div class="mut" style="margin-top:8px">${aviso}</div>`}</div>`}
- $("out").innerHTML=html;renderDia();lastScan=Date.now();
+ $("out").innerHTML=html;Object.keys(LIVE).forEach(k=>setPx(k,LIVE[k]));renderDia();lastScan=Date.now();
  $("upd").textContent="Atualizado às "+new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
  busy=false;$("go").disabled=false}
 
@@ -219,7 +219,17 @@ async function backtest(cmp){const b1=$("btgo"),b2=$("btcmp"),msg=t=>{$("btm").t
  catch(e){msg("Erro: "+e.message+". Verifique a internet ou desligue a VPN.")}
  b1.disabled=b2.disabled=false}
 
-$("go").onclick=()=>scan(false);renderDia();renderHist();renderBt();renderCfg();scan(false);
+const LIVE={};let ws=null,wsT=0;
+function setPx(sym,v){LIVE[sym]=v;
+ document.querySelectorAll(`.px[data-s="${sym}"]`).forEach(e=>e.textContent=fmt(v));
+ document.querySelectorAll(`.drift[data-s="${sym}"]`).forEach(e=>{const en=+e.dataset.e,d=(v-en)/en*100,velho=Math.abs(d)>0.3;
+  e.innerHTML=`Agora ${fmt(v)} (${d>=0?"+":""}${d.toFixed(2)}% da entrada)`+(velho?` <b style="color:var(--bad)">— sinal envelhecido, melhor não entrar</b>`:"")})}
+function liveStart(){try{ws=new WebSocket("wss://stream.binance.com:9443/stream?streams="+CFG.symbols.map(x=>x.toLowerCase()+"@miniTicker").join("/"));
+ ws.onmessage=e=>{const m=JSON.parse(e.data).data;if(m&&m.s){wsT=Date.now();setPx(m.s,+m.c)}};
+ ws.onclose=()=>setTimeout(liveStart,3000);ws.onerror=()=>{try{ws.close()}catch(x){}}}catch(e){}}
+setInterval(async()=>{if(Date.now()-wsT<5000)return;
+ for(const h of HOSTS){try{const r=await fetch(`${h}/api/v3/ticker/price?symbols=${encodeURIComponent(JSON.stringify(CFG.symbols))}`);if(!r.ok)throw 0;(await r.json()).forEach(x=>setPx(x.symbol,+x.price));return}catch(e){}}},3000);
+$("go").onclick=()=>scan(false);renderDia();renderHist();renderBt();renderCfg();scan(false);liveStart();
 const SLOT={};
 setInterval(()=>{const n=new Date(),m=n.getMinutes()%15,sl=Math.floor(n.getTime()/9e5);
  if(m>=10&&m<14&&!SLOT["p"+sl]){SLOT["p"+sl]=1;scan(true)}
