@@ -28,12 +28,15 @@ details{margin-top:6px;font-size:13px;color:var(--mut)}li{margin:3px 0}
 .sig{border:2px solid var(--ok);border-radius:10px;padding:10px;margin-top:10px;background:#0f2a22}
 .sig table{width:100%;border-collapse:collapse}.sig td{padding:2px 0}.sig td:last-child{text-align:right;font-variant-numeric:tabular-nums}
 .v{color:var(--bad);font-size:12px}
+table.t{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}table.t td,table.t th{padding:4px 2px;text-align:right}table.t td:first-child,table.t th:first-child{text-align:left}th{color:var(--mut);font-weight:500}
 </style></head><body>
 <div class="top"><div><h1>Agente Quant</h1><div class="mut" id="upd">Aguardando análise…</div></div>
 <button id="go">Analisar</button></div>
 
 <div class="card" id="dia"></div>
 <div id="out"></div>
+<div class="card" id="bt"></div>
+<div class="card" id="hist"></div>
 <p class="mut">Só avisa — não executa ordens. Você confirma e opera na Binance. Não é recomendação de investimento.</p>
 
 <script>
@@ -108,7 +111,8 @@ function renderDia(){const s=load(),bl=bloqueio(s);
  <div style="margin-top:8px;color:${bl?"var(--bad)":"var(--ok)"}">${bl||"Operação liberada"}</div>
  <div class="row"><input id="saldo" type="number" inputmode="decimal" placeholder="Saldo em USDT" value="${saldo||""}"><input id="pct" type="number" inputmode="decimal" step="0.1" placeholder="% do saldo" value="1"></div>
  <div class="row"><button class="r" onclick="ajusta('stop')">Registrar stop</button><button class="g" onclick="ajusta('gain')">Registrar ganho</button></div>
- <div class="row"><button class="s" onclick="alertas()">Ativar alertas</button><button class="s" onclick="zera()">Zerar dia</button></div>`;
+ <div class="row"><button class="s" onclick="alertas()">Ativar alertas</button><button class="s" onclick="testa()">Testar alerta</button></div>
+ <div class="row"><button class="s" onclick="zera()">Zerar dia</button></div>`;
  $("saldo").onchange=e=>{saldo=+e.target.value||0;ls.set("aq_saldo",saldo)}}
 function ajusta(t){const v=Math.abs(parseFloat($("pct").value)||1),s=load();
  if(t=="stop"){s.stops++;s.pnl-=v}else s.pnl+=v;save(s);renderDia()}
@@ -139,16 +143,68 @@ async function scan(){if(busy)return;busy=true;$("go").disabled=true;$("upd").te
   if(melhor&&melhor.score>=CFG.scoreMin){const marca=last(r.d["15m"]).t,p=plano(melhor.lado,r.d),novo=s.ultimo[r.sym]!==marca;
    if(!p)aviso="Score ok, mas stop/R-R não passa nos filtros. Aguardar.";
    else if(!novo||!bloqueio(s)){sig={...melhor,p};
-    if(novo){s.ultimo[r.sym]=marca;s.sinais++;save(s);notify(`${r.sym} ${melhor.lado=="long"?"COMPRA":"VENDA"} ${melhor.score}/100`,`Entrada ${fmt(p.e)} | Stop ${fmt(p.stop)} | TP1 ${fmt(p.tp1)}`)}}}
+    if(novo){s.ultimo[r.sym]=marca;s.sinais++;save(s);addHist(r.sym,melhor,p);notify(`${r.sym} ${melhor.lado=="long"?"COMPRA":"VENDA"} ${melhor.score}/100`,`Entrada ${fmt(p.e)} | Stop ${fmt(p.stop)} | TP1 ${fmt(p.tp1)}`)}}}
   else{const f=melhor?melhor.it.filter(i=>i[1]<i[2]).map(i=>`${i[0]} (${i[1]}/${i[2]})`):[];
-   aviso="Sem entrada — aguardar. Falta: "+(f.join(", ")||"EMA200 a favor")}
+   aviso=(melhor&&melhor.score>=70?`Quase sinal (${melhor.score}/${CFG.scoreMin}). `:"")+"Sem entrada — aguardar. Falta: "+(f.join(", ")||"EMA200 a favor")}
   html+=`<div class="card"><div style="display:flex;justify-content:space-between"><h2>${r.sym.slice(0,-4)}/${r.sym.slice(-4)}</h2><span>${fmt(last(r.d["15m"]).c)}</span></div>
   ${ladoHtml("Compra",L.long)}${ladoHtml("Venda",L.short)}${sig?sigHtml(sig):`<div class="mut" style="margin-top:8px">${aviso}</div>`}</div>`}
  $("out").innerHTML=html;renderDia();lastScan=Date.now();
  $("upd").textContent="Atualizado às "+new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
  busy=false;$("go").disabled=false}
 
-$("go").onclick=scan;renderDia();scan();setInterval(scan,CFG.scanMs);
+
+function testa(){notify("Teste de alerta","Se você recebeu isso, as notificações estão funcionando.");
+ if(!("Notification"in window)||Notification.permission!="granted")alert("Toque antes em Ativar alertas e permita as notificações.");else alert("Alerta de teste enviado.")}
+function addHist(sym,m,p){const h=ls.get("aq_hist",[]);h.unshift({t:Date.now(),sym,lado:m.lado,score:m.score,e:p.e,stop:p.stop,tp1:p.tp1,tp2:p.tp2});ls.set("aq_hist",h.slice(0,30));renderHist()}
+function renderHist(){const h=ls.get("aq_hist",[]);
+ $("hist").innerHTML=`<h2>Histórico de sinais</h2>`+(h.length?h.slice(0,10).map(x=>`<div style="margin-top:8px;font-size:13px"><b>${x.sym.slice(0,-4)} ${x.lado=="long"?"COMPRA":"VENDA"}</b> ${x.score}/100 — ${new Date(x.t).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}<br><span class="mut">Entrada ${fmt(x.e)} | Stop ${fmt(x.stop)} | TP1 ${fmt(x.tp1)} | TP2 ${fmt(x.tp2)}</span></div>`).join(""):`<div class="mut" style="margin-top:6px">Nenhum sinal registrado ainda.</div>`)}
+
+const DUR={"15m":9e5,"1h":36e5,"4h":144e5};
+function renderBt(){$("bt").innerHTML=`<h2>Backtest</h2><p class="mut" style="margin:6px 0 10px">Reproduz as regras do agente no histórico recente da Binance (≈28 dias, BTC e ETH) para mostrar quantos sinais teria dado e como teriam se saído.</p><button id="btgo" onclick="backtest()">Rodar backtest</button><div id="btm" class="mut" style="margin-top:8px"></div><div id="btr">${ls.get("aq_bt","")}</div>`}
+async function hist(sym,tf,n){let out=[],end=null,first=true;
+ while(out.length<n){const q=`symbol=${sym}&interval=${tf}&limit=1000`+(end?`&endTime=${end}`:"");let raw=null;
+  for(const h of HOSTS){try{const r=await fetch(`${h}/api/v3/klines?${q}`);if(!r.ok)throw 0;raw=await r.json();break}catch(e){}}
+  if(!raw)throw new Error(`Falha ao buscar histórico de ${sym} ${tf}`);if(!raw.length)break;
+  const rows=raw.map(k=>({t:+k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]}));
+  if(first){rows.pop();first=false}out=rows.concat(out);end=rows[0].t-1}
+ return out.slice(-n)}
+function simula(k,i,lado,p){const s=lado=="long"?1:-1,R=Math.abs(p.e-p.stop);let est=0;
+ for(let j=i+1;j<Math.min(k.length,i+97);j++){const c=k[j],pior=s>0?c.l:c.h,bom=s>0?c.h:c.l;
+  if(est==0){if(s*(pior-p.stop)<=0)return{r:-1,j};if(s*(bom-p.tp1)>=0)est=1}
+  else{if(s*(pior-p.e)<=0)return{r:0.75,j};if(s*(bom-p.tp2)>=0)return{r:2.25,j}}}
+ const jj=Math.min(k.length-1,i+96),x=s*(k[jj].c-p.e)/R;return{r:est?0.75+0.5*x:x,j:jj}}
+async function backtest(){const btn=$("btgo"),msg=t=>{$("btm").textContent=t};btn.disabled=true;const T=[];let ini=0,fim=0;
+ try{for(const sym of CFG.symbols){msg(`Baixando histórico de ${sym}…`);
+  const[k15,k1,k4]=await Promise.all([hist(sym,"15m",3000),hist(sym,"1h",1000),hist(sym,"4h",1000)]);
+  if(!ini){ini=k15[200].t;fim=last(k15).t}
+  let j1=0,j4=0,livre=0;const dia={};
+  for(let i=200;i<k15.length-1;i++){
+   if(i%150==0){msg(`${sym}: analisando ${Math.round(i/k15.length*100)}%`);await new Promise(r=>setTimeout(r))}
+   if(i<livre)continue;
+   const f=k15[i].t+DUR["15m"];
+   while(j1+1<k1.length&&k1[j1+1].t+DUR["1h"]<=f)j1++;
+   while(j4+1<k4.length&&k4[j4+1].t+DUR["4h"]<=f)j4++;
+   const d={"15m":k15.slice(Math.max(0,i-499),i+1),"1h":k1.slice(Math.max(0,j1-499),j1+1),"4h":k4.slice(Math.max(0,j4-499),j4+1)};
+   let m=null;for(const lado of["long","short"]){const[score,it,veto]=avaliar(lado,d);if(!veto&&(!m||score>m.score))m={lado,score}}
+   if(!m||m.score<CFG.scoreMin)continue;
+   const p=plano(m.lado,d);if(!p)continue;
+   const dk=new Date(k15[i].t).toISOString().slice(0,10),D=dia[dk]||(dia[dk]={stops:0,sinais:0});
+   if(D.stops>=CFG.maxStops||D.sinais>=CFG.maxSinais)continue;
+   D.sinais++;const res=simula(k15,i,m.lado,p);if(res.r<0)D.stops++;
+   T.push({sym,t:k15[i].t,lado:m.lado,score:m.score,r:res.r,net:res.r-0.002/(p.pct/100)});livre=res.j+1}}
+  const calc=a=>{let eq=0,pk=0,dd=0;for(const x of a){eq+=x.net;pk=Math.max(pk,eq);dd=Math.max(dd,pk-eq)}return{n:a.length,w:a.filter(x=>x.net>0).length,sum:eq,dd}};
+  const fR=v=>(v>=0?"+":"")+v.toFixed(1)+"R",dt=t=>new Date(t).toLocaleDateString("pt-BR");
+  const linha=([n,x])=>`<tr><td>${n}</td><td>${x.n}</td><td>${x.n?Math.round(x.w/x.n*100)+"%":"–"}</td><td>${fR(x.sum)}</td><td>-${x.dd.toFixed(1)}R</td></tr>`;
+  const rows=[...CFG.symbols.map(s=>[s.slice(0,-4),calc(T.filter(x=>x.sym==s))]),["Total",calc(T)]];
+  let h=`<div class="mut" style="margin-top:8px">Período: ${dt(ini)} a ${dt(fim)}. Taxa de 0,1% por lado e limites do dia aplicados. 1R = o valor arriscado em cada operação (1% do saldo).</div><table class="t"><tr><th></th><th>Sinais</th><th>Acertos</th><th>Resultado</th><th>Queda máx.</th></tr>${rows.map(linha).join("")}</table>`;
+  if(!T.length)h+=`<p class="mut">Nenhum sinal no período: o filtro de 85 pontos é bem restritivo.</p>`;
+  else h+=`<div class="mut" style="margin-top:8px">Últimas operações:</div>`+T.slice(-8).reverse().map(x=>`<div style="font-size:13px;margin-top:4px">${dt(x.t)} ${x.sym.slice(0,-4)} ${x.lado=="long"?"compra":"venda"} (${x.score}) → <b style="color:${x.net>0?"var(--ok)":"var(--bad)"}">${fR(x.net)}</b></div>`).join("");
+  h+=`<p class="mut" style="margin-top:8px">Poucos dias e um único regime de mercado não provam nada. Com poucos sinais, o resultado é mais sorte do que estatística.</p>`;
+  $("btr").innerHTML=h;ls.set("aq_bt",h);msg("Concluído.")}
+ catch(e){msg("Erro: "+e.message+". Verifique a internet ou desligue a VPN.")}
+ btn.disabled=false}
+
+$("go").onclick=scan;renderDia();renderHist();renderBt();scan();setInterval(scan,CFG.scanMs);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&Date.now()-lastScan>120000)scan()});
 if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script></body></html>
