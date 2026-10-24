@@ -19,7 +19,7 @@ h1{font-size:20px;margin:0}h2{font-size:16px;margin:0}
 button{font:inherit;border:0;border-radius:10px;padding:10px 14px;background:var(--acc);color:#1a1400;font-weight:600}
 button.s{background:#25354a;color:var(--tx)}button.r{background:var(--bad);color:#fff}button.g{background:var(--ok);color:#04230f}
 button:disabled{opacity:.5}
-input{font:inherit;width:100%;padding:9px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--tx)}
+input,select{font:inherit;width:100%;padding:9px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--tx)}
 .row{display:flex;gap:8px;align-items:center;margin-top:8px}.row>*{flex:1}
 .chips{display:flex;gap:8px;flex-wrap:wrap}.chip{background:var(--bg);border:1px solid var(--bd);border-radius:20px;padding:3px 10px;font-size:13px}
 .sc{display:flex;align-items:center;gap:8px;margin-top:8px}.sc b{width:62px}.bar{flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;background:var(--mut)}
@@ -35,6 +35,7 @@ table.t{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}table.
 
 <div class="card" id="dia"></div>
 <div id="out"></div>
+<div class="card" id="cfg"></div>
 <div class="card" id="bt"></div>
 <div class="card" id="hist"></div>
 <p class="mut">Só avisa — não executa ordens. Você confirma e opera na Binance. Não é recomendação de investimento.</p>
@@ -45,6 +46,7 @@ const HOSTS=["https://api.binance.com","https://data-api.binance.vision"];
 const $=id=>document.getElementById(id);
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
 let saldo=+ls.get("aq_saldo",0)||0,lastScan=0,busy=false;
+CFG.scoreMin=+ls.get("aq_min",85)||85;CFG.veto=ls.get("aq_veto",true);
 const sum=a=>a.reduce((x,y)=>x+y,0),last=(a,i=1)=>a[a.length-i];
 const hoje=()=>new Date().toLocaleDateString("sv");
 function load(){let s=ls.get("aq_state",{});if(s.data!==hoje())s={data:hoje(),stops:0,pnl:0,sinais:0,ultimo:{}};return s}
@@ -55,10 +57,10 @@ function bloqueio(s){
  if(s.sinais>=CFG.maxSinais)return `Limite de ${CFG.maxSinais} sinais no dia atingido.`;
  return null}
 
-async function klines(sym,tf){let err;
+async function klines(sym,tf,keep){let err;
  for(const h of HOSTS){try{const r=await fetch(`${h}/api/v3/klines?symbol=${sym}&interval=${tf}&limit=500`);
   if(!r.ok)throw new Error("HTTP "+r.status);const raw=await r.json();
-  return raw.slice(0,-1).map(k=>({t:+k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]}))}catch(e){err=e}}
+  return (keep?raw:raw.slice(0,-1)).map(k=>({t:+k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]}))}catch(e){err=e}}
  throw new Error(`Falha ao buscar ${sym} ${tf}: ${err&&err.message}`)}
 
 function ema(v,n){const k=2/(n+1);let e=sum(v.slice(0,n))/n;const o=Array(n-1).fill(null);o.push(e);for(let i=n;i<v.length;i++){e=v[i]*k+e*(1-k);o.push(e)}return o}
@@ -121,29 +123,29 @@ function alertas(){if(!("Notification"in window))return alert("Este navegador n�
  Notification.requestPermission().then(p=>alert(p=="granted"?"Alertas ativados. Eles funcionam com o app aberto.":"Permissão negada nas configurações do navegador."))}
 
 const fmt=x=>x.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
-function ladoHtml(nome,L,sig){const c=L.score>=CFG.scoreMin&&!L.veto;
+function ladoHtml(nome,L,sig){const vt=CFG.veto&&L.veto,c=L.score>=CFG.scoreMin&&!vt;
  return `<div class="sc"><b>${nome}</b><div class="bar"><i class="${c?"hi":""}" style="width:${L.score}%"></i></div><span class="num">${L.score}</span></div>
- ${L.veto?'<div class="v">Veto: contra a EMA 200 do 4H</div>':""}
+ ${vt?'<div class="v">Veto: contra a EMA 200 do 4H</div>':""}
  <details><summary>Critérios</summary><ul>${L.it.map(i=>`<li>${i[0]}: <b>${i[1]}/${i[2]}</b> — ${i[3]}</li>`).join("")}</ul></details>`}
-function sigHtml(sig){const p=sig.p;return `<div class="sig"><b>${sig.lado=="long"?"COMPRAR":"VENDER (exige margem/futuros)"} — score ${sig.score}/100</b>
+function sigHtml(sig){const p=sig.p;return `<div class="sig">${sig.pre?`<div style="color:var(--acc)"><b>PRÉ-AVISO</b> — o candle fecha às ${hm(sig.fecha)}. Só vale se o sinal se confirmar no fechamento.</div>`:`<div class="mut">Candle fechado às ${hm(sig.fecha)} — entrada a partir daqui</div>`}<b>${sig.lado=="long"?"COMPRAR":"VENDER (exige margem/futuros)"} — score ${sig.score}/100</b>
  <table><tr><td>Entrada</td><td>${fmt(p.e)}</td></tr><tr><td>Stop loss</td><td>${fmt(p.stop)} (${p.pct.toFixed(2)}%)</td></tr>
  <tr><td>TP1 (50% da posição)</td><td>${fmt(p.tp1)}</td></tr><tr><td>TP2</td><td>${fmt(p.tp2)}</td></tr>
  <tr><td>R/R médio</td><td>1:${p.rr.toFixed(2)}</td></tr><tr><td>Posição (risco 1%)</td><td>${p.pos?fmt(p.pos)+" USDT":"informe o saldo"}</td></tr></table>
  <div class="mut" style="margin-top:6px">Confirme manualmente e mova o stop para a entrada após o TP1.</div></div>`}
 
-async function scan(){if(busy)return;busy=true;$("go").disabled=true;$("upd").textContent="Analisando…";
+async function scan(pre){if(busy)return;busy=true;$("go").disabled=true;$("upd").textContent="Analisando…";
  const s=load(),res=await Promise.all(CFG.symbols.map(async sym=>{try{const d={};
-  await Promise.all(["4h","1h","15m"].map(async tf=>{d[tf]=await klines(sym,tf)}));return{sym,d}}catch(e){return{sym,err:e.message}}}));
+  await Promise.all(["4h","1h","15m"].map(async tf=>{d[tf]=await klines(sym,tf,pre&&tf=="15m")}));return{sym,d}}catch(e){return{sym,err:e.message}}}));
  let html="";const bl0=bloqueio(s);if(bl0)html+=`<div class="card warn">SEM ENTRADA — AGUARDAR. ${bl0}</div>`;
  for(const r of res){
   if(r.err){html+=`<div class="card warn"><b>${r.sym}</b><br>${r.err}<br><span class="mut">Verifique a internet ou desligue a VPN.</span></div>`;continue}
   const L={};let melhor=null;
-  for(const lado of["long","short"]){const[score,it,veto]=avaliar(lado,r.d);L[lado]={score,it,veto};if(!veto&&(!melhor||score>melhor.score))melhor={lado,score,it}}
+  for(const lado of["long","short"]){const[score,it,veto]=avaliar(lado,r.d);L[lado]={score,it,veto};if(!(CFG.veto&&veto)&&(!melhor||score>melhor.score))melhor={lado,score,it}}
   let sig=null,aviso="";
   if(melhor&&melhor.score>=CFG.scoreMin){const marca=last(r.d["15m"]).t,p=plano(melhor.lado,r.d),novo=s.ultimo[r.sym]!==marca;
    if(!p)aviso="Score ok, mas stop/R-R não passa nos filtros. Aguardar.";
-   else if(!novo||!bloqueio(s)){sig={...melhor,p};
-    if(novo){s.ultimo[r.sym]=marca;s.sinais++;save(s);addHist(r.sym,melhor,p);notify(`${r.sym} ${melhor.lado=="long"?"COMPRA":"VENDA"} ${melhor.score}/100`,`Entrada ${fmt(p.e)} | Stop ${fmt(p.stop)} | TP1 ${fmt(p.tp1)}`)}}}
+   else if(!novo||!bloqueio(s)){sig={...melhor,p,pre,fecha:marca+9e5};
+    if(pre){avisaPre(r.sym,melhor,p,marca+9e5)}else if(novo){s.ultimo[r.sym]=marca;s.sinais++;save(s);addHist(r.sym,melhor,p);notify(`${r.sym} ${melhor.lado=="long"?"COMPRA":"VENDA"} ${melhor.score}/100`,`Entrada ${hm(marca+9e5)} a ${fmt(p.e)} | Stop ${fmt(p.stop)} | TP1 ${fmt(p.tp1)}`)}}}
   else{const f=melhor?melhor.it.filter(i=>i[1]<i[2]).map(i=>`${i[0]} (${i[1]}/${i[2]})`):[];
    aviso=(melhor&&melhor.score>=70?`Quase sinal (${melhor.score}/${CFG.scoreMin}). `:"")+"Sem entrada — aguardar. Falta: "+(f.join(", ")||"EMA200 a favor")}
   html+=`<div class="card"><div style="display:flex;justify-content:space-between"><h2>${r.sym.slice(0,-4)}/${r.sym.slice(-4)}</h2><span>${fmt(last(r.d["15m"]).c)}</span></div>
@@ -160,7 +162,7 @@ function renderHist(){const h=ls.get("aq_hist",[]);
  $("hist").innerHTML=`<h2>Histórico de sinais</h2>`+(h.length?h.slice(0,10).map(x=>`<div style="margin-top:8px;font-size:13px"><b>${x.sym.slice(0,-4)} ${x.lado=="long"?"COMPRA":"VENDA"}</b> ${x.score}/100 — ${new Date(x.t).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}<br><span class="mut">Entrada ${fmt(x.e)} | Stop ${fmt(x.stop)} | TP1 ${fmt(x.tp1)} | TP2 ${fmt(x.tp2)}</span></div>`).join(""):`<div class="mut" style="margin-top:6px">Nenhum sinal registrado ainda.</div>`)}
 
 const DUR={"15m":9e5,"1h":36e5,"4h":144e5};
-function renderBt(){$("bt").innerHTML=`<h2>Backtest</h2><p class="mut" style="margin:6px 0 10px">Reproduz as regras do agente no histórico recente da Binance (≈28 dias, BTC e ETH) para mostrar quantos sinais teria dado e como teriam se saído.</p><button id="btgo" onclick="backtest()">Rodar backtest</button><div id="btm" class="mut" style="margin-top:8px"></div><div id="btr">${ls.get("aq_bt","")}</div>`}
+function renderBt(){$("bt").innerHTML=`<h2>Backtest</h2><p class="mut" style="margin:6px 0 10px">Reproduz as regras do agente no histórico recente da Binance (≈28 dias, BTC e ETH) para mostrar quantos sinais teria dado e como teriam se saído.</p><div class="row"><button id="btgo" onclick="backtest(0)">Rodar backtest</button><button id="btcmp" class="s" onclick="backtest(1)">Comparar notas</button></div><div id="btm" class="mut" style="margin-top:8px"></div><div id="btr">${ls.get("aq_bt","")}</div>`}
 async function hist(sym,tf,n){let out=[],end=null,first=true;
  while(out.length<n){const q=`symbol=${sym}&interval=${tf}&limit=1000`+(end?`&endTime=${end}`:"");let raw=null;
   for(const h of HOSTS){try{const r=await fetch(`${h}/api/v3/klines?${q}`);if(!r.ok)throw 0;raw=await r.json();break}catch(e){}}
@@ -173,38 +175,55 @@ function simula(k,i,lado,p){const s=lado=="long"?1:-1,R=Math.abs(p.e-p.stop);let
   if(est==0){if(s*(pior-p.stop)<=0)return{r:-1,j};if(s*(bom-p.tp1)>=0)est=1}
   else{if(s*(pior-p.e)<=0)return{r:0.75,j};if(s*(bom-p.tp2)>=0)return{r:2.25,j}}}
  const jj=Math.min(k.length-1,i+96),x=s*(k[jj].c-p.e)/R;return{r:est?0.75+0.5*x:x,j:jj}}
-async function backtest(){const btn=$("btgo"),msg=t=>{$("btm").textContent=t};btn.disabled=true;const T=[];let ini=0,fim=0;
- try{for(const sym of CFG.symbols){msg(`Baixando histórico de ${sym}…`);
+const hm=t=>new Date(t).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}),PRE={};
+function avisaPre(sym,m,p,f){const k=sym+f;if(PRE[k])return;PRE[k]=1;notify(`PRÉ-AVISO ${sym} ${m.lado=="long"?"COMPRA":"VENDA"} ${m.score}/100`,`Candle fecha às ${hm(f)}. Se confirmar: entrada ~${fmt(p.e)} | Stop ${fmt(p.stop)} | TP1 ${fmt(p.tp1)}`)}
+function renderCfg(){$("cfg").innerHTML=`<h2>Ajustes</h2><div class="row"><label class="mut">Nota mínima para avisar</label><select id="smin" onchange="setCfg()">${[70,75,80,85,90,95].map(v=>`<option${v==CFG.scoreMin?" selected":""}>${v}</option>`).join("")}</select></div><div class="row"><label class="mut"><input type="checkbox" id="sveto" ${CFG.veto?"checked":""} onchange="setCfg()" style="width:auto"> Respeitar a EMA 200 do 4H (recomendado)</label></div><p class="mut" style="margin:6px 0 0">Pré-aviso 5 minutos antes do fechamento de cada candle de 15 min (:10, :25, :40, :55). O sinal real sai logo após o fechamento (:00, :15, :30, :45).</p>`}
+function setCfg(){CFG.scoreMin=+$("smin").value;CFG.veto=$("sveto").checked;ls.set("aq_min",CFG.scoreMin);ls.set("aq_veto",CFG.veto);scan(false)}
+let BTD=null;
+async function btLoad(msg){if(BTD)return BTD;const B={};
+ for(const sym of CFG.symbols){msg(`Baixando histórico de ${sym}…`);
   const[k15,k1,k4]=await Promise.all([hist(sym,"15m",3000),hist(sym,"1h",1000),hist(sym,"4h",1000)]);
-  if(!ini){ini=k15[200].t;fim=last(k15).t}
-  let j1=0,j4=0,livre=0;const dia={};
+  let j1=0,j4=0;const cand=[];
   for(let i=200;i<k15.length-1;i++){
    if(i%150==0){msg(`${sym}: analisando ${Math.round(i/k15.length*100)}%`);await new Promise(r=>setTimeout(r))}
-   if(i<livre)continue;
    const f=k15[i].t+DUR["15m"];
    while(j1+1<k1.length&&k1[j1+1].t+DUR["1h"]<=f)j1++;
    while(j4+1<k4.length&&k4[j4+1].t+DUR["4h"]<=f)j4++;
-   const d={"15m":k15.slice(Math.max(0,i-499),i+1),"1h":k1.slice(Math.max(0,j1-499),j1+1),"4h":k4.slice(Math.max(0,j4-499),j4+1)};
-   let m=null;for(const lado of["long","short"]){const[score,it,veto]=avaliar(lado,d);if(!veto&&(!m||score>m.score))m={lado,score}}
-   if(!m||m.score<CFG.scoreMin)continue;
-   const p=plano(m.lado,d);if(!p)continue;
-   const dk=new Date(k15[i].t).toISOString().slice(0,10),D=dia[dk]||(dia[dk]={stops:0,sinais:0});
+   const d={"15m":k15.slice(Math.max(0,i-499),i+1),"1h":k1.slice(Math.max(0,j1-499),j1+1),"4h":k4.slice(Math.max(0,j4-499),j4+1)},c={i};let ok=false;
+   for(const lado of["long","short"]){const[score,it,veto]=avaliar(lado,d);if(score>=70){ok=true;c[lado]={score,veto,p:plano(lado,d)}}}
+   if(ok)cand.push(c)}
+  B[sym]={k15,cand}}
+ B.ini=B[CFG.symbols[0]].k15[200].t;B.fim=last(B[CFG.symbols[0]].k15).t;BTD=B;return B}
+function btRun(thr){const T=[];
+ for(const sym of CFG.symbols){const{k15,cand}=BTD[sym],dia={};let livre=0;
+  for(const c of cand){if(c.i<livre)continue;let m=null;
+   for(const lado of["long","short"]){const x=c[lado];if(x&&x.score>=thr&&!(CFG.veto&&x.veto)&&(!m||x.score>m.score))m={lado,score:x.score,p:x.p}}
+   if(!m||!m.p)continue;
+   const dk=new Date(k15[c.i].t).toISOString().slice(0,10),D=dia[dk]||(dia[dk]={stops:0,sinais:0});
    if(D.stops>=CFG.maxStops||D.sinais>=CFG.maxSinais)continue;
-   D.sinais++;const res=simula(k15,i,m.lado,p);if(res.r<0)D.stops++;
-   T.push({sym,t:k15[i].t,lado:m.lado,score:m.score,r:res.r,net:res.r-0.002/(p.pct/100)});livre=res.j+1}}
+   D.sinais++;const res=simula(k15,c.i,m.lado,m.p);if(res.r<0)D.stops++;
+   T.push({sym,t:k15[c.i].t,lado:m.lado,score:m.score,r:res.r,net:res.r-0.002/(m.p.pct/100)});livre=res.j+1}}
+ return T}
+async function backtest(cmp){const b1=$("btgo"),b2=$("btcmp"),msg=t=>{$("btm").textContent=t};b1.disabled=b2.disabled=true;
+ try{const B=await btLoad(msg);
   const calc=a=>{let eq=0,pk=0,dd=0;for(const x of a){eq+=x.net;pk=Math.max(pk,eq);dd=Math.max(dd,pk-eq)}return{n:a.length,w:a.filter(x=>x.net>0).length,sum:eq,dd}};
-  const fR=v=>(v>=0?"+":"")+v.toFixed(1)+"R",dt=t=>new Date(t).toLocaleDateString("pt-BR");
-  const linha=([n,x])=>`<tr><td>${n}</td><td>${x.n}</td><td>${x.n?Math.round(x.w/x.n*100)+"%":"–"}</td><td>${fR(x.sum)}</td><td>-${x.dd.toFixed(1)}R</td></tr>`;
-  const rows=[...CFG.symbols.map(s=>[s.slice(0,-4),calc(T.filter(x=>x.sym==s))]),["Total",calc(T)]];
-  let h=`<div class="mut" style="margin-top:8px">Período: ${dt(ini)} a ${dt(fim)}. Taxa de 0,1% por lado e limites do dia aplicados. 1R = o valor arriscado em cada operação (1% do saldo).</div><table class="t"><tr><th></th><th>Sinais</th><th>Acertos</th><th>Resultado</th><th>Queda máx.</th></tr>${rows.map(linha).join("")}</table>`;
-  if(!T.length)h+=`<p class="mut">Nenhum sinal no período: o filtro de 85 pontos é bem restritivo.</p>`;
-  else h+=`<div class="mut" style="margin-top:8px">Últimas operações:</div>`+T.slice(-8).reverse().map(x=>`<div style="font-size:13px;margin-top:4px">${dt(x.t)} ${x.sym.slice(0,-4)} ${x.lado=="long"?"compra":"venda"} (${x.score}) → <b style="color:${x.net>0?"var(--ok)":"var(--bad)"}">${fR(x.net)}</b></div>`).join("");
-  h+=`<p class="mut" style="margin-top:8px">Poucos dias e um único regime de mercado não provam nada. Com poucos sinais, o resultado é mais sorte do que estatística.</p>`;
+  const fR=v=>(v>=0?"+":"")+v.toFixed(1)+"R",dt=t=>new Date(t).toLocaleDateString("pt-BR"),pc=x=>x.n?Math.round(x.w/x.n*100)+"%":"–";
+  const per=`Período: ${dt(B.ini)} a ${dt(B.fim)}. Taxa de 0,1% por lado e limites do dia aplicados. EMA 200 ${CFG.veto?"respeitada":"ignorada"}. 1R = valor arriscado (1% do saldo).`;
+  let h;
+  if(cmp){h=`<div class="mut" style="margin-top:8px">${per}</div><table class="t"><tr><th>Nota mín.</th><th>Sinais</th><th>Acertos</th><th>Resultado</th></tr>`+[70,75,80,85,90,95].map(v=>{const x=calc(btRun(v));return `<tr><td>${v}</td><td>${x.n}</td><td>${pc(x)}</td><td>${fR(x.sum)}</td></tr>`}).join("")+`</table><p class="mut" style="margin-top:8px">Cuidado: escolher a nota que foi melhor num único mês é ajustar o sistema ao passado (overfitting). Só vale se o padrão se repetir em outros períodos.</p>`}
+  else{const T=btRun(CFG.scoreMin),rows=[...CFG.symbols.map(y=>[y.slice(0,-4),calc(T.filter(x=>x.sym==y))]),["Total",calc(T)]];
+   h=`<div class="mut" style="margin-top:8px">${per} Nota mínima: ${CFG.scoreMin}.</div><table class="t"><tr><th></th><th>Sinais</th><th>Acertos</th><th>Resultado</th><th>Queda máx.</th></tr>${rows.map(([n,x])=>`<tr><td>${n}</td><td>${x.n}</td><td>${pc(x)}</td><td>${fR(x.sum)}</td><td>-${x.dd.toFixed(1)}R</td></tr>`).join("")}</table>`;
+   h+=T.length?`<div class="mut" style="margin-top:8px">Últimas operações:</div>`+T.slice(-8).reverse().map(x=>`<div style="font-size:13px;margin-top:4px">${dt(x.t)} ${x.sym.slice(0,-4)} ${x.lado=="long"?"compra":"venda"} (${x.score}) → <b style="color:${x.net>0?"var(--ok)":"var(--bad)"}">${fR(x.net)}</b></div>`).join(""):`<p class="mut">Nenhum sinal no período com essa nota.</p>`;
+   h+=`<p class="mut" style="margin-top:8px">Poucos dias e um único regime de mercado não provam nada.</p>`}
   $("btr").innerHTML=h;ls.set("aq_bt",h);msg("Concluído.")}
  catch(e){msg("Erro: "+e.message+". Verifique a internet ou desligue a VPN.")}
- btn.disabled=false}
+ b1.disabled=b2.disabled=false}
 
-$("go").onclick=scan;renderDia();renderHist();renderBt();scan();setInterval(scan,CFG.scanMs);
+$("go").onclick=()=>scan(false);renderDia();renderHist();renderBt();renderCfg();scan(false);
+const SLOT={};
+setInterval(()=>{const n=new Date(),m=n.getMinutes()%15,sl=Math.floor(n.getTime()/9e5);
+ if(m>=10&&m<14&&!SLOT["p"+sl]){SLOT["p"+sl]=1;scan(true)}
+ if(m==0&&n.getSeconds()>=5&&!SLOT["c"+sl]){SLOT["c"+sl]=1;scan(false)}},5000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&Date.now()-lastScan>120000)scan()});
 if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script></body></html>
