@@ -1,21 +1,23 @@
-QUANT V3 — INTEGRAÇÃO DE INTELIGÊNCIA TINYFISH
-Repositório EXCLUSIVO: gustavomulling85-bot/quant
+QUANT V3 — PROTÓTIPO DE OPERAÇÕES SIMULADAS
 
-STATUS: pacote preparado e validado sintaticamente. Não foi enviado ao GitHub: o conector retornou erro 403 de permissão de gravação.
+Arquivo: quant-paper-bot.js
+Este arquivo é um MÓDULO de Node.js (CommonJS), NÃO deve ser colado em v3.html e NÃO substitui quant-decisao.js nem server.js.
 
-1. No GitHub, abra SOMENTE o repositório gustavomulling85-bot/quant, branch main.
-2. Escolha Add file > Upload files e envie quant-intelligence.js para a RAIZ do repositório.
-3. Confirme (Commit changes).
-4. Abra o arquivo v3.html do MESMO repositório e toque em Edit (lápis).
-5. No final do arquivo, imediatamente ANTES de </body>, insira a linha:
-   <script src="/quant-intelligence.js" defer></script>
-6. Salve o commit e aguarde o redeploy automático do serviço agente-quant-v3 do Render.
-7. Abra https://agente-quant-v3.onrender.com/v3.html
-8. O painel "Inteligência de mercado — TinyFish" estará abaixo da Visão geral.
-9. Use o PIN definido no Render na variável QUANT_ACCESS_PIN. O PIN não é a chave de API do TinyFish.
+REGRAS
+- Sem ordens reais; não utiliza chave de negociação da Binance.
+- Mercado spot e somente compras simuladas.
+- Avaliação técnica baseada em candles diários fechados, EMA50, EMA200, Donchian20 e volume.
+- O TinyFish pesquisa o contexto para candidatos técnicos; a pesquisa, sozinha, NUNCA autoriza uma compra.
+- Entradas virtuais exigem confirmação; metas são limites de parada e não lucros garantidos.
+- Saldo virtual inicial: 1000 USDT; alvo diário +0,5%, perda máxima diária -1%, até 3 operações virtuais, até 10% do saldo por entrada, stop teórico -1%, alvo teórico +1,5%, taxas modeladas como 0,1% por lado.
 
-REQUISITOS: o serviço Render deve conter TINYFISH_API_KEY e QUANT_ACCESS_PIN; o servidor existente server.js já implementa /api/tinyfish/context.
+ATENÇÃO: Estes limites são ilustrativos, NÃO calibrados para o seu perfil nem validados em backtest. Não use dinheiro real.
 
-SEGURANÇA: a API key deve ficar APENAS em variáveis de ambiente no servidor, nunca em HTML/JS público. O campo PIN é apagado ao término da pesquisa. Não compartilhe prints com chaves expostas.
+INSTALAÇÃO FUTURA
+1. Enviar quant-paper-bot.js para a raiz do repositório quant.
+2. Integrar explicitamente as funções exportadas ao servidor por endpoints autenticados, com confirmação humana, persistência de estado e auditoria de ordens simuladas. ESTE PASSO AINDA NÃO FOI FEITO.
+3. Corrigir as entradas dos relatórios, pois um candle diário não é estratégia intradiária.
+4. Testar taxas, slippage, stops, preço de execução, timezone e reinícios.
+5. Render Free pode suspender o serviço e não tem persistência local confiável; usar execução agendada e banco de dados para 24/7.
 
-ESCOPO: apenas contexto de notícias e fontes. Não executa ordens, não altera o algoritmo, não promete aumento de acerto e não modifica outros repositórios. A pesquisa é manual para controlar custos e reduzir falsos alarmes. A revisão quantitativa do backtest precisa ser feita separadamente e validada fora da amostra antes de mudar sinais.
+Nunca envie chaves de API ou PIN para GitHub público, nem inclua credenciais no JavaScript do navegador.
