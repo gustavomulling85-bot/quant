@@ -25,14 +25,19 @@ details{margin-top:6px;font-size:13px;color:var(--mut)}li{margin:3px 0}
 .v{color:var(--bad);font-size:12px}
 .obs{border-left:3px solid var(--mut);padding-left:8px;margin-top:8px;font-size:13px;color:var(--mut)}
 table.t{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}table.t td,table.t th{padding:4px 2px;text-align:right}table.t td:first-child,table.t th:first-child{text-align:left}th{color:var(--mut);font-weight:500}
+.tv{height:380px;border-radius:10px;overflow:hidden;margin-top:10px;background:#0b111a}
 </style></head><body>
 <div class="top"><div><h1>Agente Quant V3</h1><div class="mut" id="upd">Rompimento de 20 dias · diário · só compra</div></div>
 <button id="go">Analisar</button></div>
 <div id="out"></div>
+<div class="card"><h2>Gráficos (estilo Binance)</h2>
+<div class="mut" style="margin-top:6px">Candles diários com EMA 50 e EMA 200. Pinça para zoom.</div>
+<div class="tv" id="tv_btc"></div>
+<div class="tv" id="tv_eth"></div></div>
 <div class="card" id="cfg"></div>
 <div class="card" id="bt"></div>
 <div class="card" id="hist"></div>
-<p class="mut">Só avisa — não executa ordens. Não é recomendação de investimento. Estratégia: rompimento Donchian 20 dias no diário, apenas compra (spot). Sinais MUITO raros: semanas sem nada é normal.</p>
+<p class="mut">Só avisa — não executa ordens. Não é recomendação de investimento. Estratégia: rompimento Donchian 20 dias no diário, apenas compra (spot). Sinais raros: semanas sem nada é normal.</p>
 
 <script>
 const CFG={symbols:["BTCUSDT","ETHUSDT"],scoreMin:85};
@@ -41,7 +46,7 @@ const $=id=>document.getElementById(id);
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 CFG.scoreMin=+ls.get("aq3_min",85)||85;
 const sum=a=>a.reduce((x,y)=>x+y,0),last=(a,i=1)=>a[a.length-i];
-let busy=false;
+let busy=false;const LASTA={};
 
 async function klines(sym){let err;
  for(const h of HOSTS){try{const r=await fetch(`${h}/api/v3/klines?symbol=${sym}&interval=1d&limit=500`);
@@ -81,24 +86,36 @@ function compraHtml(L){const vt=L.veto,c=L.score>=CFG.scoreMin&&!vt;
  ${vt?'<div class="v">Veto: preço abaixo da EMA 200 diária</div>':""}
  <details><summary>Critérios</summary><ul>${L.it.map(i=>`<li>${i[0]}: <b>${i[1]}/${i[2]}</b> — ${i[3]}</li>`).join("")}</ul></details>`}
 
+function copiaAgente(sym){const A=LASTA[sym];if(!A)return;
+ const txt=`Análise do Agente Quant V3 (rompimento 20 dias, diário, só compra) para ${sym}:
+Preço: ${fmt(A.px)} | Score: ${A.score}/100 | Veto EMA200: ${A.veto?"SIM":"não"}
+Critérios:
+${A.it.map(i=>`- ${i[0]}: ${i[1]}/${i[2]} (${i[3]})`).join("\n")}
+${A.p?`Plano: entrada ${fmt(A.p.e)}, stop ${fmt(A.p.stop)} (${A.p.pct.toFixed(1)}%), TP1 ${fmt(A.p.tp1)}, TP2 ${fmt(A.p.tp2)}`:"Sem plano (score abaixo da nota ou veto)."}
+Pergunta: como agente revisor, avalie o contexto deste sinal/quase-sinal, aponte riscos que os critérios não capturam e diga se concorda ou vetaria. Não é pedido de recomendação de investimento.`;
+ (navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(txt):Promise.reject()).then(()=>alert("Análise copiada! Cole na conversa com o Claude para o parecer do agente revisor."),()=>{prompt("Copie o texto abaixo:",txt)})}
+
 async function scan(){if(busy)return;busy=true;$("go").disabled=true;$("upd").textContent="Analisando…";
  const res=await Promise.all(CFG.symbols.map(async sym=>{try{return{sym,k:await klines(sym)}}catch(e){return{sym,err:e.message}}}));
  let html="";
  for(const r of res){
   if(r.err){html+=`<div class="card warn"><b>${r.sym}</b><br>${r.err}</div>`;continue}
-  const[score,it,veto]=avaliar(r.k),L={score,it,veto};let body="";
-  if(!veto&&score>=CFG.scoreMin){const p=plano(r.k);
-   if(p){body=`<div class="sig"><b>COMPRAR — score ${score}/100</b>
-    <table><tr><td>Entrada (próx. abertura)</td><td>${fmt(p.e)}</td></tr><tr><td>Stop (2×ATR)</td><td>${fmt(p.stop)} (${p.pct.toFixed(1)}%)</td></tr>
-    <tr><td>TP1 (vender metade)</td><td>${fmt(p.tp1)}</td></tr><tr><td>TP2</td><td>${fmt(p.tp2)}</td></tr></table>
+  const[score,it,veto]=avaliar(r.k),L={score,it,veto},p=(!veto&&score>=60)?plano(r.k):null;
+  LASTA[r.sym]={px:last(r.k).c,score,it,veto,p:(!veto&&score>=CFG.scoreMin)?plano(r.k):p};
+  let body="";
+  if(!veto&&score>=CFG.scoreMin){const pl=plano(r.k);
+   if(pl){body=`<div class="sig"><b>COMPRAR — score ${score}/100</b>
+    <table><tr><td>Entrada (próx. abertura)</td><td>${fmt(pl.e)}</td></tr><tr><td>Stop (2×ATR)</td><td>${fmt(pl.stop)} (${pl.pct.toFixed(1)}%)</td></tr>
+    <tr><td>TP1 (vender metade)</td><td>${fmt(pl.tp1)}</td></tr><tr><td>TP2</td><td>${fmt(pl.tp2)}</td></tr></table>
     <div class="mut" style="margin-top:6px">Candle diário fechado. Confirme manualmente. Após TP1, mova o stop para a entrada.</div></div>`;
-    addHist(r.sym,score,p)}else body=`<div class="mut" style="margin-top:8px">Score ok, mas o stop não passou nos filtros de risco.</div>`}
+    addHist(r.sym,score,pl)}else body=`<div class="mut" style="margin-top:8px">Score ok, mas o stop não passou nos filtros de risco.</div>`}
   else{const f=it.filter(i=>i[1]<i[2]).map(i=>`${i[0]} (${i[1]}/${i[2]})`);
    if(!veto&&score>=60)addObs(r.sym,score,last(r.k).c);
    body=`<div class="mut" style="margin-top:8px">${score>=60&&!veto?`Quase sinal (${score}/${CFG.scoreMin}) — registrado em Observação. `:""}Sem entrada — aguardar. Falta: ${f.join(", ")||"veto da EMA200"}</div>`}
   html+=`<div class="card"><div style="display:flex;justify-content:space-between"><h2>${r.sym.slice(0,-4)}/${r.sym.slice(-4)}</h2><span>${fmt(last(r.k).c)}</span></div>
   <div class="mut" style="font-size:12px">Candle diário fechado em ${new Date(last(r.k).t+864e5).toLocaleDateString("pt-BR")}</div>
-  ${compraHtml(L)}${body}</div>`}
+  ${compraHtml(L)}${body}
+  <div class="row"><button class="s" onclick="copiaAgente('${r.sym}')">Copiar p/ Agente (revisor IA)</button></div></div>`}
  $("out").innerHTML=html;renderHist();
  $("upd").textContent="Atualizado às "+new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
  busy=false;$("go").disabled=false}
@@ -114,7 +131,7 @@ function renderHist(){const h=ls.get("aq3_hist",[]),o=ls.get("aq3_obs",[]);
 function renderCfg(){$("cfg").innerHTML=`<h2>Ajustes</h2><div class="row"><label class="mut">Nota mínima</label><select id="smin" onchange="setCfg()">${[70,75,80,85,90].map(v=>`<option${v==CFG.scoreMin?" selected":""}>${v}</option>`).join("")}</select></div><p class="mut" style="margin:6px 0 0">Análise no fechamento do candle diário (21:00 de Brasília). Reabra o app após esse horário para ver o dia novo.</p>`}
 function setCfg(){CFG.scoreMin=+$("smin").value;ls.set("aq3_min",CFG.scoreMin);scan()}
 
-function renderBt(){$("bt").innerHTML=`<h2>Backtest</h2><p class="mut" style="margin:6px 0 10px">Regras V3 (rompimento 20 dias, diário, só compra) em ~2,7 anos de histórico — amostra bem maior que V1 e V2.</p><div class="row"><button id="btgo" onclick="backtest(0)">Rodar backtest</button><button id="btcmp" class="s" onclick="backtest(1)">Comparar notas</button></div><div id="btm" class="mut" style="margin-top:8px"></div><div id="btr">${ls.get("aq3_bt","")}</div>`}
+function renderBt(){$("bt").innerHTML=`<h2>Backtest</h2><p class="mut" style="margin:6px 0 10px">Regras V3 (rompimento 20 dias, diário, só compra) em ~2,7 anos de histórico.</p><div class="row"><button id="btgo" onclick="backtest(0)">Rodar backtest</button><button id="btcmp" class="s" onclick="backtest(1)">Comparar notas</button></div><div id="btm" class="mut" style="margin-top:8px"></div><div id="btr">${ls.get("aq3_bt","")}</div>`}
 async function histD(sym){let raw=null;
  for(const h of HOSTS){try{const r=await fetch(`${h}/api/v3/klines?symbol=${sym}&interval=1d&limit=1000`);if(!r.ok)throw 0;raw=await r.json();break}catch(e){}}
  if(!raw)throw new Error(`Falha no histórico de ${sym}`);
@@ -146,7 +163,7 @@ async function backtest(cmp){const b1=$("btgo"),b2=$("btcmp"),msg=t=>{$("btm").t
   const fR=v=>(v>=0?"+":"")+v.toFixed(1)+"R",dt=t=>new Date(t).toLocaleDateString("pt-BR"),pc=x=>x.n?Math.round(x.w/x.n*100)+"%":"–";
   const per=`Período: ${dt(B.ini)} a ${dt(B.fim)} (~2,7 anos). Só compra. Taxa 0,1% por lado. 1R = valor arriscado.`;
   let h;
-  if(cmp){h=`<div class="mut" style="margin-top:8px">${per}</div><table class="t"><tr><th>Nota mín.</th><th>Sinais</th><th>Acertos</th><th>Resultado</th></tr>`+[60,70,75,80,85,90].map(v=>{const x=calc(btRun(v));return `<tr><td>${v}</td><td>${x.n}</td><td>${pc(x)}</td><td>${fR(x.sum)}</td></tr>`}).join("")+`</table><p class="mut" style="margin-top:8px">Procure COERÊNCIA entre as notas, não um pico isolado. Pico isolado = sorte/overfitting.</p>`}
+  if(cmp){h=`<div class="mut" style="margin-top:8px">${per}</div><table class="t"><tr><th>Nota mín.</th><th>Sinais</th><th>Acertos</th><th>Resultado</th></tr>`+[60,70,75,80,85,90].map(v=>{const x=calc(btRun(v));return `<tr><td>${v}</td><td>${x.n}</td><td>${pc(x)}</td><td>${fR(x.sum)}</td></tr>`}).join("")+`</table><p class="mut" style="margin-top:8px">Procure COERÊNCIA entre as notas, não um pico isolado.</p>`}
   else{const T=btRun(CFG.scoreMin),rows=[...CFG.symbols.map(y=>[y.slice(0,-4),calc(T.filter(x=>x.sym==y))]),["Total",calc(T)]];
    h=`<div class="mut" style="margin-top:8px">${per} Nota mínima: ${CFG.scoreMin}.</div><table class="t"><tr><th></th><th>Sinais</th><th>Acertos</th><th>Resultado</th><th>Queda máx.</th></tr>${rows.map(([n,x])=>`<tr><td>${n}</td><td>${x.n}</td><td>${pc(x)}</td><td>${fR(x.sum)}</td><td>-${x.dd.toFixed(1)}R</td></tr>`).join("")}</table>`;
    h+=T.length?`<div class="mut" style="margin-top:8px">Últimas operações:</div>`+T.slice(-8).reverse().map(x=>`<div style="font-size:13px;margin-top:4px">${dt(x.t)} ${x.sym.slice(0,-4)} compra (${x.score}) → <b style="color:${x.net>0?"var(--ok)":"var(--bad)"}">${fR(x.net)}</b></div>`).join(""):`<p class="mut">Nenhum sinal no período.</p>`}
@@ -154,5 +171,10 @@ async function backtest(cmp){const b1=$("btgo"),b2=$("btcmp"),msg=t=>{$("btm").t
  catch(e){msg("Erro: "+e.message)}
  b1.disabled=b2.disabled=false}
 
-$("go").onclick=scan;renderCfg();renderBt();renderHist();scan();
+function tvInit(){const s=document.createElement("script");s.src="https://s3.tradingview.com/tv.js";
+ s.onload=()=>{new TradingView.widget({container_id:"tv_btc",symbol:"BINANCE:BTCUSDT",interval:"D",theme:"dark",style:"1",locale:"br",autosize:true,hide_top_toolbar:false,studies:["MAExp@tv-basicstudies","MAExp@tv-basicstudies"]});
+ new TradingView.widget({container_id:"tv_eth",symbol:"BINANCE:ETHUSDT",interval:"D",theme:"dark",style:"1",locale:"br",autosize:true,studies:["MAExp@tv-basicstudies","MAExp@tv-basicstudies"]})};
+ document.head.appendChild(s)}
+
+$("go").onclick=scan;renderCfg();renderBt();renderHist();scan();tvInit();
 </script></body></html>
