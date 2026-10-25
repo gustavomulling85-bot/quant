@@ -1,23 +1,49 @@
-QUANT - ROBÔ AUTOMÁTICO DE SIMULAÇÃO, VERSÃO EXPERIMENTAL
+QUANT — SCALPING EXPERIMENTAL DE 1 MINUTO
 
-ARQUIVOS DO PACOTE:
-1. server.js          SUBSTITUIR o server.js original (mantém rotas antigas)
-2. quant-auto-bot.js  ADICIONAR na raiz do mesmo repositório
-3. quant-auto-ui.js   ADICIONAR na raiz do mesmo repositório
+1. No GitHub, envie para a RAIZ do repositorio:
+   quant-scalp-bot.js
+   quant-scalp-ui.js
 
-NO QUANT-UNIFICADO.HTML, NO FINAL, ANTES DE </body> COLE:
-<script src="quant-auto-ui.js" defer></script>
+2. No server.js, logo apos a linha:
+   const AUTO=require('./quant-auto-bot');
+   INSIRA:
+   const SCALP=require('./quant-scalp-bot');
 
-O SCRIPT cria o cartão "Robô automático" dentro do Painel Único.
-Depois do deploy, abra quant-unificado.html, preencha o PIN existente na seção TinyFish, clique no menu "Robô virtual", carregue o status, configure seus parâmetros e ative.
+   No handler HTTP, logo apos:
+   if(await AUTO.handle(req,res,u))return;
+   INSIRA:
+   if(await SCALP.handle(req,res,u))return;
 
-ESTA VERSÃO É PAPER-TRADING. SEM ORDENS REAIS.
-A rotina roda no servidor a cada minuto. Entrada só em fechamento de velas 15m, a partir do horário configurado em America/Sao_Paulo. Entradas dependem de sinal técnico + triagem TinyFish. Se fonte ausente ou alerta de risco, não entra. Stops/metas virtuais são aproximados em candles de 15m e NÃO equivalem a execução de mercado real. Se o servidor dormir ou ficar indisponível, NÃO MONITORA.
+   ANTES do bloco de arquivos estaticos em server.js (antes da linha
+   if(req.method!=='GET'&&req.method!=='HEAD')), INSIRA:
+   if(/^\/quant-scalp-(bot\.js|state\.json(?:\.tmp)?)$/.test(u.pathname))return json(res,403,{error:'Acesso negado.'});
 
-ATENÇÃO SOBRE ARMAZENAMENTO: o estado é gravado em quant-auto-state.json NO DISCO TEMPORÁRIO DO RENDER. Pode se perder após um novo deploy ou reinício. O motor sempre volta DESLIGADO ao reiniciar por segurança. Não use como histórico definitivo até migrar para Supabase/Postgres.
+   No FINAL de server.js, logo apos:
+   AUTO.start();
+   INSIRA:
+   SCALP.start();
 
-Configurações de partida: capital 1000 USDT (simulado), 100 por entrada, 5 USDT de meta diária, 10 USDT de perda máxima, até 3 entradas/dia, início 09:00, alvo por entrada +2,5%, stop -1% e taxa 0,1% de cada lado. Meta é objetivo de PARADA, não lucro garantido.
+3. Em quant-unificado.html, logo ANTES de </body></html>:
+   <script src="quant-scalp-ui.js" defer></script>
 
-O motor só opera virtualmente quando ATIVADO explicitamente com o botão do painel. Não ligue funções de compras reais; nenhuma chave Binance é necessária.
+4. Confirme as alteracoes no GitHub, espere o deploy Render, abra
+   https://agente-quant-v3.onrender.com/quant-unificado.html
+   informe o PIN na secao TinyFish, toque Atualizar scalping e confira
+   se os dados estao conectados. SOMENTE DEPOIS ative a simulacao.
 
-Status de implantação: NÃO PUBLICADO pelo assistente. GitHub recusou acesso de escrita (403). Requer substituição/upload manual e teste no Render.
+ATENCAO:
+- E necessario fazer os 3 pequenos ajustes manuais acima, alem de enviar os dois arquivos.
+- NAO substitua o servidor inteiro. Preserva o robô de 5m.
+- Scalp tem carteira FICTICIA separada: 1000 USDT de teste.
+- Usa candles fechados de 1 minuto, estimativa retrospectiva de
+  amostras semelhantes, RSI 52-70, EMA9>EMA21, volume 1.2x,
+  minimo de 8 amostras, acerto historico >=65%, media liquida >0.03%.
+- Essas estimativas sao de amostra interna e NAO validacao de previsao.
+- Ao entrar, simula compra no ask+slippage, 0.1% taxa de compra.
+- Verifica saida de ~10 em ~10 segundos, alvo de 60 segundos,
+  ou stop de emergencia de -1%. Usa bid-slippage e taxa de venda.
+- Meta 50 USDT, perda 20 USDT, 3 losses, apenas simulacao.
+- Nao existe ordens reais nem API key de corretora.
+- Render usa arquivo temporario; dados podem se perder.
+- Sua unica conta no painel NAO foi unificada: sao dois experimentos
+  e duas carteiras independentes, identificadas pelo nome.
