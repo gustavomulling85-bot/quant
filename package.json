@@ -1,0 +1,8 @@
+{
+  "name": "agente-quant-v3",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Servidor exclusivo para o Quant V3 e ponte TinyFish",
+  "scripts": {"start": "node server.js", "check": "node --check server.js"},
+  "engines": {"node": ">=20"}
+}

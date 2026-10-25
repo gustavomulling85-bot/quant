@@ -1,0 +1,27 @@
+AGENTE QUANT V3 — ARQUIVOS ADICIONAIS PARA O RENDER
+
+ADICIONE ESTES 4 ARQUIVOS NA RAIZ DO REPOSITÓRIO CORRETO:
+  package.json
+  server.js
+  tinyfish.html
+  tinyfish.js
+
+NÃO substitua index.html, v3.html, lab.html, painel.js, sw.js ou manifest.json.
+
+Render: Node, branch que contém esses arquivos, Root Directory em branco,
+Build Command: npm install
+Start Command: npm start
+Plano: $0/mês para testes (fica inativo após ociosidade).
+Variáveis: TINYFISH_API_KEY e QUANT_ACCESS_PIN.
+
+Depois de publicar, visite /api/health e /tinyfish.html no endereço Render.
+A tela nova é separada da V3 e não interfere no motor de sinais. Futuramente
+poderemos adicionar apenas um link para ela na V3.
+
+IMPORTANTE: Seu print do GitHub exibe o nome 'quantitativo' enquanto o Render
+está associado a 'quant'. Confira a URL real e a branch antes de adicionar.
+Não envie nenhuma chave em prints ou no GitHub. Rotacione a chave que
+apareceu anteriormente no chat.
+
+Segurança: esse PIN é proteção simples para testes, NÃO autenticação robusta.
+Não recomendo uso público sem login, rate-limit persistente e auditoria.
