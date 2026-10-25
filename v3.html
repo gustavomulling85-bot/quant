@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0d1520">
+<title>Agente Quant V3 — Rompimento Diário</title>
+<style>
+:root{--bg:#0d1520;--card:#15202e;--bd:#25354a;--tx:#e8edf3;--mut:#8497ad;--ok:#2fd28c;--bad:#ff5a6e;--acc:#f0b90b;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,Roboto,sans-serif;padding:12px 12px 20px;max-width:560px;margin:auto}
+h1{font-size:20px;margin:0}h2{font-size:16px;margin:0}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}
+.mut{color:var(--mut);font-size:13px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:12px}
+.warn{border-color:var(--bad);color:var(--bad)}
+button{font:inherit;border:0;border-radius:10px;padding:10px 14px;background:var(--acc);color:#1a1400;font-weight:600}
+button.s{background:#25354a;color:var(--tx)}button:disabled{opacity:.5}
+select{font:inherit;width:100%;padding:9px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--tx)}
+.row{display:flex;gap:8px;align-items:center;margin-top:8px}.row>*{flex:1}
+.sc{display:flex;align-items:center;gap:8px;margin-top:8px}.sc b{width:62px}.bar{flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;background:var(--mut)}
+.bar i.hi{background:var(--ok)}.num{width:44px;text-align:right}
+details{margin-top:6px;font-size:13px;color:var(--mut)}li{margin:3px 0}
+.sig{border:2px solid var(--ok);border-radius:10px;padding:10px;margin-top:10px;background:#0f2a22}
+.sig table{width:100%;border-collapse:collapse}.sig td{padding:2px 0}.sig td:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.v{color:var(--bad);font-size:12px}
+.obs{border-left:3px solid var(--mut);padding-left:8px;margin-top:8px;font-size:13px;color:var(--mut)}
+table.t{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}table.t td,table.t th{padding:4px 2px;text-align:right}table.t td:first-child,table.t th:first-child{text-align:left}th{color:var(--mut);font-weight:500}
+</style></head><body>
+<div class="top"><div><h1>Agente Quant V3</h1><div class="mut" id="upd">Rompimento de 20 dias · diário · só compra</div></div>
+<button id="go">Analisar</button></div>
+<div id="out"></div>
+<div class="card" id="cfg"></div>
+<div class="card" id="bt"></div>
+<div class="card" id="hist"></div>
+<p class="mut">Só avisa — não executa ordens. Não é recomendação de investimento. Estratégia: rompimento Donchian 20 dias no diário, apenas compra (spot). Sinais MUITO raros: semanas sem nada é normal.</p>
+
+<script>
+const CFG={symbols:["BTCUSDT","ETHUSDT"],scoreMin:85};
+const HOSTS=["https://api.binance.com","https://data-api.binance.vision"];
+const $=id=>document.getElementById(id);
+const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+CFG.scoreMin=+ls.get("aq3_min",85)||85;
+const sum=a=>a.reduce((x,y)=>x+y,0),last=(a,i=1)=>a[a.length-i];
+let busy=false;
+
+async function klines(sym){let err;
+ for(const h of HOSTS){try{const r=await fetch(`${h}/api/v3/klines?symbol=${sym}&interval=1d&limit=500`);
+  if(!r.ok)throw new Error("HTTP "+r.status);const raw=await r.json();
+  return raw.slice(0,-1).map(k=>({t:+k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]}))}catch(e){err=e}}
+ throw new Error(`Falha ao buscar ${sym}: ${err&&err.message}`)}
+
+function ema(v,n){const k=2/(n+1);let e=sum(v.slice(0,n))/n;const o=Array(n-1).fill(null);o.push(e);for(let i=n;i<v.length;i++){e=v[i]*k+e*(1-k);o.push(e)}return o}
+function rsi(v,n=14){const g=[],l=[];for(let i=1;i<v.length;i++){g.push(Math.max(v[i]-v[i-1],0));l.push(Math.max(v[i-1]-v[i],0))}
+ let ag=sum(g.slice(0,n))/n,al=sum(l.slice(0,n))/n;
+ for(let i=n;i<g.length;i++){ag=(ag*(n-1)+g[i])/n;al=(al*(n-1)+l[i])/n}return al==0?100:100-100/(1+ag/al)}
+function atr(c,n=14){const tr=[];for(let i=1;i<c.length;i++)tr.push(Math.max(c[i].h-c[i].l,Math.abs(c[i].h-c[i-1].c),Math.abs(c[i].l-c[i-1].c)));
+ let a=sum(tr.slice(0,n))/n;for(const x of tr.slice(n))a=(a*(n-1)+x)/n;return a}
+
+function avaliar(k){const c=k.map(x=>x.c),it=[],f0=x=>x.toFixed(0);
+ const e50=ema(c,50),e200=ema(c,200),cur=last(k),px=cur.c;
+ const tend=px>last(e200)&&last(e50)>last(e200),veto=px<=last(e200);
+ it.push(["Tendência (preço e EMA50 acima da EMA200 diária)",tend?25:0,25,`preço ${f0(px)}, EMA50 ${f0(last(e50))}, EMA200 ${f0(last(e200))}`]);
+ const hi20=Math.max(...k.slice(-21,-1).map(x=>x.h)),rompe=cur.c>hi20;
+ it.push(["Rompimento: fechou acima da máxima de 20 dias",rompe?30:0,30,`fechou ${f0(cur.c)} vs máxima ${f0(hi20)}`]);
+ const fresco=rompe&&cur.c<=hi20*1.03;
+ it.push(["Rompimento fresco (até 3% acima da máxima)",fresco?15:0,15,rompe?`${((cur.c/hi20-1)*100).toFixed(1)}% acima`:"sem rompimento"]);
+ const vols=k.map(x=>x.v),vm=sum(vols.slice(-21,-1))/20;
+ it.push(["Volume acima da média de 20",last(vols)>vm?15:0,15,`vol ${last(vols).toFixed(0)} vs média ${vm.toFixed(0)}`]);
+ const r=rsi(c.slice(-100));
+ it.push(["RSI diário entre 50 e 80 (força sem euforia)",r>=50&&r<=80?15:0,15,`RSI ${r.toFixed(1)}`]);
+ return[sum(it.map(i=>i[1])),it,veto]}
+
+function plano(k){const e=last(k).c,a=atr(k),stop=e-2*a;
+ if(e-stop<=0)return null;const risco=e-stop,pct=risco/e*100;
+ if(pct<1||pct>12)return null;
+ return{e,stop,tp1:e+1.5*risco,tp2:e+3*risco,pct}}
+
+const fmt=x=>x.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+function compraHtml(L){const vt=L.veto,c=L.score>=CFG.scoreMin&&!vt;
+ return `<div class="sc"><b>Compra</b><div class="bar"><i class="${c?"hi":""}" style="width:${L.score}%"></i></div><span class="num">${L.score}</span></div>
+ ${vt?'<div class="v">Veto: preço abaixo da EMA 200 diária</div>':""}
+ <details><summary>Critérios</summary><ul>${L.it.map(i=>`<li>${i[0]}: <b>${i[1]}/${i[2]}</b> — ${i[3]}</li>`).join("")}</ul></details>`}
+
+async function scan(){if(busy)return;busy=true;$("go").disabled=true;$("upd").textContent="Analisando…";
+ const res=await Promise.all(CFG.symbols.map(async sym=>{try{return{sym,k:await klines(sym)}}catch(e){return{sym,err:e.message}}}));
+ let html="";
+ for(const r of res){
+  if(r.err){html+=`<div class="card warn"><b>${r.sym}</b><br>${r.err}</div>`;continue}
+  const[score,it,veto]=avaliar(r.k),L={score,it,veto};let body="";
+  if(!veto&&score>=CFG.scoreMin){const p=plano(r.k);
+   if(p){body=`<div class="sig"><b>COMPRAR — score ${score}/100</b>
+    <table><tr><td>Entrada (próx. abertura)</td><td>${fmt(p.e)}</td></tr><tr><td>Stop (2×ATR)</td><td>${fmt(p.stop)} (${p.pct.toFixed(1)}%)</td></tr>
+    <tr><td>TP1 (vender metade)</td><td>${fmt(p.tp1)}</td></tr><tr><td>TP2</td><td>${fmt(p.tp2)}</td></tr></table>
+    <div class="mut" style="margin-top:6px">Candle diário fechado. Confirme manualmente. Após TP1, mova o stop para a entrada.</div></div>`;
+    addHist(r.sym,score,p)}else body=`<div class="mut" style="margin-top:8px">Score ok, mas o stop não passou nos filtros de risco.</div>`}
+  else{const f=it.filter(i=>i[1]<i[2]).map(i=>`${i[0]} (${i[1]}/${i[2]})`);
+   if(!veto&&score>=60)addObs(r.sym,score,last(r.k).c);
+   body=`<div class="mut" style="margin-top:8px">${score>=60&&!veto?`Quase sinal (${score}/${CFG.scoreMin}) — registrado em Observação. `:""}Sem entrada — aguardar. Falta: ${f.join(", ")||"veto da EMA200"}</div>`}
+  html+=`<div class="card"><div style="display:flex;justify-content:space-between"><h2>${r.sym.slice(0,-4)}/${r.sym.slice(-4)}</h2><span>${fmt(last(r.k).c)}</span></div>
+  <div class="mut" style="font-size:12px">Candle diário fechado em ${new Date(last(r.k).t+864e5).toLocaleDateString("pt-BR")}</div>
+  ${compraHtml(L)}${body}</div>`}
+ $("out").innerHTML=html;renderHist();
+ $("upd").textContent="Atualizado às "+new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+ busy=false;$("go").disabled=false}
+
+function addHist(sym,score,p){const h=ls.get("aq3_hist",[]);const dup=h.find(x=>x.sym==sym&&Date.now()-x.t<72e6);if(dup)return;
+ h.unshift({t:Date.now(),sym,score,e:p.e,stop:p.stop,tp1:p.tp1,tp2:p.tp2});ls.set("aq3_hist",h.slice(0,30))}
+function addObs(sym,score,px){const o=ls.get("aq3_obs",[]);const dup=o.find(x=>x.sym==sym&&Date.now()-x.t<72e6);if(dup)return;
+ o.unshift({t:Date.now(),sym,score,px});ls.set("aq3_obs",o.slice(0,30))}
+function renderHist(){const h=ls.get("aq3_hist",[]),o=ls.get("aq3_obs",[]);
+ $("hist").innerHTML=`<h2>Histórico de sinais</h2>`+(h.length?h.slice(0,10).map(x=>`<div style="margin-top:8px;font-size:13px"><b>${x.sym.slice(0,-4)} COMPRA</b> ${x.score}/100 — ${new Date(x.t).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}<br><span class="mut">Entrada ${fmt(x.e)} | Stop ${fmt(x.stop)} | TP1 ${fmt(x.tp1)} | TP2 ${fmt(x.tp2)}</span></div>`).join(""):`<div class="mut" style="margin-top:6px">Nenhum sinal ainda. No diário, semanas em silêncio são normais.</div>`)
+ +`<h2 style="margin-top:14px">Observação — não operar</h2>`+(o.length?o.slice(0,10).map(x=>`<div class="obs"><b>${x.sym.slice(0,-4)}</b> nota ${x.score} — ${new Date(x.t).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit"})} · preço ${fmt(x.px)}</div>`).join(""):`<div class="mut" style="margin-top:6px">Nada registrado.</div>`)}
+
+function renderCfg(){$("cfg").innerHTML=`<h2>Ajustes</h2><div class="row"><label class="mut">Nota mínima</label><select id="smin" onchange="setCfg()">${[70,75,80,85,90].map(v=>`<option${v==CFG.scoreMin?" selected":""}>${v}</option>`).join("")}</select></div><p class="mut" style="margin:6px 0 0">Análise no fechamento do candle diário (21:00 de Brasília). Reabra o app após esse horário para ver o dia novo.</p>`}
+function setCfg(){CFG.scoreMin=+$("smin").value;ls.set("aq3_min",CFG.scoreMin);scan()}
+
+function renderBt(){$("bt").innerHTML=`<h2>Backtest</h2><p class="mut" style="margin:6px 0 10px">Regras V3 (rompimento 20 dias, diário, só compra) em ~2,7 anos de histórico — amostra bem maior que V1 e V2.</p><div class="row"><button id="btgo" onclick="backtest(0)">Rodar backtest</button><button id="btcmp" class="s" onclick="backtest(1)">Comparar notas</button></div><div id="btm" class="mut" style="margin-top:8px"></div><div id="btr">${ls.get("aq3_bt","")}</div>`}
+async function histD(sym){let raw=null;
+ for(const h of HOSTS){try{const r=await fetch(`${h}/api/v3/klines?symbol=${sym}&interval=1d&limit=1000`);if(!r.ok)throw 0;raw=await r.json();break}catch(e){}}
+ if(!raw)throw new Error(`Falha no histórico de ${sym}`);
+ const rows=raw.map(k=>({t:+k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]}));rows.pop();return rows}
+function simula(k,i,p){let est=0;
+ for(let j=i+1;j<Math.min(k.length,i+91);j++){const c=k[j];
+  if(est==0){if(c.l<=p.stop)return{r:-1,j};if(c.h>=p.tp1)est=1}
+  else{if(c.l<=p.e)return{r:0.75,j};if(c.h>=p.tp2)return{r:2.25,j}}}
+ const jj=Math.min(k.length-1,i+90),x=(k[jj].c-p.e)/(p.e-p.stop);return{r:est?0.75+0.5*x:x,j:jj}}
+let BTD=null;
+async function btLoad(msg){if(BTD)return BTD;const B={};
+ for(const sym of CFG.symbols){msg(`Baixando histórico de ${sym}…`);
+  const k=await histD(sym),cand=[];
+  for(let i=220;i<k.length-1;i++){
+   if(i%100==0){msg(`${sym}: ${Math.round(i/k.length*100)}%`);await new Promise(r=>setTimeout(r))}
+   const win=k.slice(Math.max(0,i-499),i+1),[score,it,veto]=avaliar(win);
+   if(score>=60&&!veto)cand.push({i,score,p:plano(win)})}
+  B[sym]={k,cand}}
+ B.ini=B[CFG.symbols[0]].k[220].t;B.fim=last(B[CFG.symbols[0]].k).t;BTD=B;return B}
+function btRun(thr){const T=[];
+ for(const sym of CFG.symbols){const{k,cand}=BTD[sym];let livre=0;
+  for(const c of cand){if(c.i<livre||c.score<thr||!c.p)continue;
+   const res=simula(k,c.i,c.p);
+   T.push({sym,t:k[c.i].t,score:c.score,r:res.r,net:res.r-0.002/(c.p.pct/100)});livre=res.j+1}}
+ return T.sort((a,b)=>a.t-b.t)}
+async function backtest(cmp){const b1=$("btgo"),b2=$("btcmp"),msg=t=>{$("btm").textContent=t};b1.disabled=b2.disabled=true;
+ try{const B=await btLoad(msg);
+  const calc=a=>{let eq=0,pk=0,dd=0;for(const x of a){eq+=x.net;pk=Math.max(pk,eq);dd=Math.max(dd,pk-eq)}return{n:a.length,w:a.filter(x=>x.net>0).length,sum:eq,dd}};
+  const fR=v=>(v>=0?"+":"")+v.toFixed(1)+"R",dt=t=>new Date(t).toLocaleDateString("pt-BR"),pc=x=>x.n?Math.round(x.w/x.n*100)+"%":"–";
+  const per=`Período: ${dt(B.ini)} a ${dt(B.fim)} (~2,7 anos). Só compra. Taxa 0,1% por lado. 1R = valor arriscado.`;
+  let h;
+  if(cmp){h=`<div class="mut" style="margin-top:8px">${per}</div><table class="t"><tr><th>Nota mín.</th><th>Sinais</th><th>Acertos</th><th>Resultado</th></tr>`+[60,70,75,80,85,90].map(v=>{const x=calc(btRun(v));return `<tr><td>${v}</td><td>${x.n}</td><td>${pc(x)}</td><td>${fR(x.sum)}</td></tr>`}).join("")+`</table><p class="mut" style="margin-top:8px">Procure COERÊNCIA entre as notas, não um pico isolado. Pico isolado = sorte/overfitting.</p>`}
+  else{const T=btRun(CFG.scoreMin),rows=[...CFG.symbols.map(y=>[y.slice(0,-4),calc(T.filter(x=>x.sym==y))]),["Total",calc(T)]];
+   h=`<div class="mut" style="margin-top:8px">${per} Nota mínima: ${CFG.scoreMin}.</div><table class="t"><tr><th></th><th>Sinais</th><th>Acertos</th><th>Resultado</th><th>Queda máx.</th></tr>${rows.map(([n,x])=>`<tr><td>${n}</td><td>${x.n}</td><td>${pc(x)}</td><td>${fR(x.sum)}</td><td>-${x.dd.toFixed(1)}R</td></tr>`).join("")}</table>`;
+   h+=T.length?`<div class="mut" style="margin-top:8px">Últimas operações:</div>`+T.slice(-8).reverse().map(x=>`<div style="font-size:13px;margin-top:4px">${dt(x.t)} ${x.sym.slice(0,-4)} compra (${x.score}) → <b style="color:${x.net>0?"var(--ok)":"var(--bad)"}">${fR(x.net)}</b></div>`).join(""):`<p class="mut">Nenhum sinal no período.</p>`}
+  $("btr").innerHTML=h;ls.set("aq3_bt",h);msg("Concluído.")}
+ catch(e){msg("Erro: "+e.message)}
+ b1.disabled=b2.disabled=false}
+
+$("go").onclick=scan;renderCfg();renderBt();renderHist();scan();
+</script></body></html>
