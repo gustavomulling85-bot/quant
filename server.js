@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const ROOT = __dirname;
+const PAPER = require('./quant-paper-bot');
 const PORT = Number(process.env.PORT || 3000);
 const SYMBOLS = new Set(['BTC','ETH','SOL','BNB','XRP','LINK','AVAX','ADA']);
 const CACHE = new Map();
@@ -38,6 +39,27 @@ const server=http.createServer(async(req,res)=>{
         CACHE.set(symbol,{at:now,result});return json(res,200,result);
       }catch(error){return json(res,502,{error:error.name==='AbortError'?'Tempo de consulta esgotado.':'Não foi possível consultar o TinyFish.'});}
       finally{clearTimeout(timeout);}
+    }
+    if(u.pathname.startsWith('/api/paper/')){
+      if(!pinValid(req.headers['x-quant-pin']))return json(res,401,{error:'PIN inválido.'});
+      if(u.pathname==='/api/paper/status'&&req.method==='GET')return json(res,200,await PAPER.refresh());
+      if(req.method!=='POST')return json(res,405,{error:'Método inválido.'});
+      let b='';for await(const chunk of req){b+=chunk;if(b.length>1024)return json(res,413,{error:'Requisição extensa.'});}
+      let body={};try{body=b?JSON.parse(b):{}}catch{return json(res,400,{error:'JSON inválido.'})}
+      if(u.pathname==='/api/paper/pause')return json(res,200,PAPER.pause(body.paused));
+      if(u.pathname==='/api/paper/scan'){
+        const context=async sym=>{
+          // Dados TinyFish apenas informativos; jamais autorizam operações automaticamente.
+          if(!process.env.TINYFISH_API_KEY)return {status:'INCONCLUSIVO',reason:'TinyFish não configurado'};
+          const ctrl=new AbortController(),timeout=setTimeout(()=>ctrl.abort(),14000);
+          try{const r=await fetch('https://api.search.tinyfish.ai/?'+new URLSearchParams({query:sym+' crypto latest 72 hours market risk news',language:'en'}),{headers:{'X-API-Key':process.env.TINYFISH_API_KEY,Accept:'application/json'},signal:ctrl.signal});if(!r.ok)throw Error('TinyFish indisponível');const raw=await r.json(),now=Date.now();const recent=(Array.isArray(raw.results)?raw.results:[]).filter(x=>x.date&&Number.isFinite(Date.parse(x.date))&&Date.parse(x.date)<=now&&now-Date.parse(x.date)<=72*3600000);return {status:'REVISÃO_HUMANA',recentCount:recent.length,reason:'Notícias não autorizam operações'};}catch{return {status:'INCONCLUSIVO',reason:'TinyFish sem contexto verificável'}}finally{clearTimeout(timeout)}};
+        return json(res,200,await PAPER.scan(context));
+      }
+      if(u.pathname==='/api/paper/enter'){
+        if(typeof body.symbol!=='string')return json(res,400,{error:'Ativo obrigatório.'});
+        try{return json(res,200,await PAPER.enter(body.symbol))}catch(e){return json(res,409,{error:e.message})}
+      }
+      return json(res,404,{error:'Rota desconhecida.'});
     }
     if(req.method!=='GET'&&req.method!=='HEAD')return json(res,405,{error:'Método não permitido.'});
     const requested=u.pathname==='/'?'index.html':decodeURIComponent(u.pathname).replace(/^\/+/, '');

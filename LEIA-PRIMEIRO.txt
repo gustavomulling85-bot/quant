@@ -1,23 +1,34 @@
-QUANT V3 — PROTÓTIPO DE OPERAÇÕES SIMULADAS
+QUANT V3 — LABORATÓRIO DE SIMULAÇÃO (versão de avaliação)
 
-Arquivo: quant-paper-bot.js
-Este arquivo é um MÓDULO de Node.js (CommonJS), NÃO deve ser colado em v3.html e NÃO substitui quant-decisao.js nem server.js.
+ARQUIVOS QUE DEVEM SER ENVIADOS À RAIZ DO REPOSITÓRIO gustavomulling85-bot/quant
+- server.js (SUBSTITUI o arquivo existente; mantém a rota TinyFish e a hospedagem do V3)
+- quant-paper-bot.js (SUBSTITUI o protótipo anterior)
+- paper.html (NOVO)
+- paper-ui.js (NOVO)
 
-REGRAS
-- Sem ordens reais; não utiliza chave de negociação da Binance.
-- Mercado spot e somente compras simuladas.
-- Avaliação técnica baseada em candles diários fechados, EMA50, EMA200, Donchian20 e volume.
-- O TinyFish pesquisa o contexto para candidatos técnicos; a pesquisa, sozinha, NUNCA autoriza uma compra.
-- Entradas virtuais exigem confirmação; metas são limites de parada e não lucros garantidos.
-- Saldo virtual inicial: 1000 USDT; alvo diário +0,5%, perda máxima diária -1%, até 3 operações virtuais, até 10% do saldo por entrada, stop teórico -1%, alvo teórico +1,5%, taxas modeladas como 0,1% por lado.
+NÃO SUBSTITUA v3.html, quant-intelligence.js, quant-decisao.js ou index.html.
 
-ATENÇÃO: Estes limites são ilustrativos, NÃO calibrados para o seu perfil nem validados em backtest. Não use dinheiro real.
+PASSO A PASSO PELO GITHUB
+1. Extraia este ZIP. É necessário enviar os quatro arquivos extraídos, não o ZIP.
+2. No repositório quant, use Add file > Upload files.
+3. Selecione os quatro arquivos e verifique se os nomes estão EXATAMENTE iguais.
+4. Confirme as alterações. O GitHub perguntará sobre substituição de server.js e quant-paper-bot.js.
+5. Se o Render usa auto deploy, consulte o status e abra https://agente-quant-v3.onrender.com/paper.html.
+6. Informe seu PIN do Quant e clique Atualizar carteira. Em seguida execute Analisar candidatos + TinyFish.
+7. Se uma moeda aparecer como REVISAR, a eventual compra é SOMENTE VIRTUAL e requer um clique explícito.
 
-INSTALAÇÃO FUTURA
-1. Enviar quant-paper-bot.js para a raiz do repositório quant.
-2. Integrar explicitamente as funções exportadas ao servidor por endpoints autenticados, com confirmação humana, persistência de estado e auditoria de ordens simuladas. ESTE PASSO AINDA NÃO FOI FEITO.
-3. Corrigir as entradas dos relatórios, pois um candle diário não é estratégia intradiária.
-4. Testar taxas, slippage, stops, preço de execução, timezone e reinícios.
-5. Render Free pode suspender o serviço e não tem persistência local confiável; usar execução agendada e banco de dados para 24/7.
+SEGURANÇA
+- NÃO envie PIN ou chave da API ao GitHub nem nesta conversa.
+- Nenhuma chave de negociação, autenticação Binance ou ordem real existe neste pacote.
+- O PIN não é salvo em armazenamento persistente no navegador; permanece somente no campo até a aba fechar.
+- O TinyFish NÃO classifica notícias como sinal positivo e não autoriza operação.
+- Nunca trate a meta diária como promessa de lucro.
 
-Nunca envie chaves de API ou PIN para GitHub público, nem inclua credenciais no JavaScript do navegador.
+LIMITAÇÕES IMPORTANTES
+- O filtro técnico ainda é DIÁRIO, não intradiário; não haverá necessariamente operações todos os dias.
+- Stop e alvo são verificações virtuais aproximadas de candles: não equivalem a execução de ordens.
+- Este módulo NÃO está agendado 24/7 e exige que a simulação seja consultada; fechamento e preços não são monitorados continuamente.
+- O estado é gravado em arquivo local. Em muitos serviços Render sem disco persistente, deploy/restart apagará a carteira. Não usar como registro confiável até adicionar banco persistente.
+- A avaliação do TinyFish é somente contextual. Uma notícia antiga ou inconclusiva não valida uma compra.
+- A simulação ainda não foi calibrada para operação real ou backtest intradiário.
+- A versão preparada não foi publicada no Render; testes realizados localmente: sintaxe do Node, rota health, PIN negado sem credencial e status de carteira virtual retornando.

@@ -1,61 +1,41 @@
 'use strict';
-// Simulação somente. Não conecta conta nem envia ordens reais.
-// Módulo independente para o Agente Quant V3.
-const SYMBOLS=['BTC','ETH','SOL','BNB','XRP','LINK','AVAX','ADA'];
-const MAX_TRADES_PER_DAY=3;
-const TARGET_DAILY=0.005; // +0,5% do saldo virtual inicial do dia
-const LOSS_DAILY=0.01; // -1% do saldo virtual inicial do dia
-const CAPITAL_PER_TRADE=0.10; // 10% do saldo simulado
-const FEE=0.001; // 0,1% por lado
-const initial=1000;
-let balance=initial, day='', opening=initial, trades=0, positions=[], history=[], lastCheck=null;
-const getDate=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-const makeJson=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
-function resetDay(){const d=getDate();if(day!==d){day=d;opening=balance;trades=0;}}
-function pnl(){return (balance-opening)/opening;}
-async function candles(symbol){
- const url='https://data-api.binance.vision/api/v3/klines?'+new URLSearchParams({symbol:symbol+'USDT',interval:'1d',limit:'230'});
- const r=await fetch(url,{signal:AbortSignal.timeout(12000)});if(!r.ok)throw new Error('Falha Binance '+r.status);
- const k=await r.json(); if(!Array.isArray(k)||k.length<221)throw new Error('Histórico insuficiente');
- // Exclui candle ainda aberto.
- return k.slice(0,-1).map(x=>({t:Number(x[0]),h:Number(x[2]),l:Number(x[3]),c:Number(x[4]),v:Number(x[5])}));
-}
-function ema(prices,n){let x=prices.slice(0,n).reduce((a,b)=>a+b,0)/n;for(let i=n;i<prices.length;i++)x=prices[i]*(2/(n+1))+x*(1-2/(n+1));return x;}
-function eligibility(k){const a=k.at(-1),px=k.map(x=>x.c),e200=ema(px,200),e50=ema(px,50),high20=Math.max(...k.slice(-21,-1).map(x=>x.h));const avg=k.slice(-21,-1).reduce((s,x)=>s+x.v,0)/20;
- return {ok:a.c>e200&&e50>e200&&a.c>high20&&a.c<=high20*1.03&&a.v>avg,price:a.c,candle:a.t};}
-async function contextCheck(symbol,pin,origin){
- // Reutiliza a rota já existente e NÃO trata notícias como autorização de compra.
- const r=await fetch(origin+'/api/tinyfish/context',{method:'POST',headers:{'Content-Type':'application/json','X-Quant-Pin':pin},body:JSON.stringify({symbol}),signal:AbortSignal.timeout(20000)});
- if(!r.ok)throw new Error('Contexto indisponível ('+r.status+')');
- const data=await r.json();const now=Date.now();const sources=(data.results||[]).filter(x=>x.date&&Number.isFinite(Date.parse(x.date))&&Date.parse(x.date)<=now&&now-Date.parse(x.date)<72*3600e3&&/^https:\/\//.test(x.url||''));
- return {count:sources.length,status:'REVISÃO MANUAL'}; // NÃO autoriza trade mesmo com notícias recentes.
-}
-async function inspect({pin,origin}){
- resetDay();const records=[];
- for(const symbol of SYMBOLS){
-  try{const k=await candles(symbol),sig=eligibility(k);if(!sig.ok){records.push({symbol,status:'SEM SINAL'});continue;}
-   const ctx=await contextCheck(symbol,pin,origin);
-   // Somente SINAL PENDENTE: para liberar simulação o usuário confirma via rota específica.
-   records.push({symbol,status:'PENDENTE DE REVISÃO',price:sig.price,candle:sig.candle,context:ctx});
-  }catch(e){records.push({symbol,status:'INDISPONÍVEL',reason:e.message});}
+// QUANT PAPER ONLY: nunca conecta a contas ou envia ordens reais.
+const fs=require('node:fs');
+const path=require('node:path');
+const ASSETS=['BTC','ETH','SOL','BNB','XRP','LINK','AVAX','ADA'];
+const START=1000,FEE=.001,MAX_TRADES=3,ALLOC=.10,GOAL=.005,LOSS=.01;
+const FILE=process.env.QUANT_PAPER_STATE_FILE||path.join(__dirname,'.quant-paper-state.json');
+const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+const empty=()=>({cash:START,positions:[],trades:[],day:today(),dayStart:START,openedToday:0,candidates:[],scanAt:null,paused:false});
+let st;try{st=JSON.parse(fs.readFileSync(FILE,'utf8'));if(!Number.isFinite(st.cash)||!Array.isArray(st.positions))throw 0;}catch{st=empty();}
+const save=()=>{try{const tmp=FILE+'.tmp';fs.writeFileSync(tmp,JSON.stringify(st));fs.renameSync(tmp,FILE)}catch(e){console.warn('Paper persistence unavailable:',e.message)}};
+function resetDay(){const d=today();if(st.day!==d){st.day=d;st.dayStart=equity();st.openedToday=0;st.candidates=[];st.scanAt=null;save()}}
+function equity(){return st.cash+st.positions.reduce((s,p)=>s+p.qty*p.mark,0)}
+function pnl(){return st.dayStart>0?(equity()-st.dayStart)/st.dayStart:0}
+function blocked(){return st.paused?'PAUSADO':pnl()>=GOAL?'META DIÁRIA':pnl()<=-LOSS?'LIMITE DE PERDA':st.openedToday>=MAX_TRADES?'LIMITE DE OPERAÇÕES':null}
+async function market(sym){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);try{let r=await fetch('https://data-api.binance.vision/api/v3/klines?'+new URLSearchParams({symbol:sym+'USDT',interval:'1d',limit:'240'}),{signal:controller.signal});if(!r.ok)throw Error('Binance HTTP '+r.status);let data=await r.json();if(!Array.isArray(data)||data.length<220)throw Error('Dados insuficientes');return data.map(x=>({t:+x[0],o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5]}))}finally{clearTimeout(timer)}}
+function ema(p,n){let x=p.slice(0,n).reduce((a,b)=>a+b,0)/n;for(let i=n;i<p.length;i++)x=p[i]*(2/(n+1))+x*(1-2/(n+1));return x}
+function technical(kl){const k=kl.slice(0,-1),c=k.map(x=>x.c),last=k.at(-1),ema50=ema(c,50),ema200=ema(c,200),hi=Math.max(...k.slice(-21,-1).map(x=>x.h)),v=k.slice(-21,-1).reduce((a,x)=>a+x.v,0)/20;
+ return {ok:last.c>ema200&&ema50>ema200&&last.c>hi&&last.c<=hi*1.03&&last.v>v,price:last.c,candle:last.t};}
+async function refresh(){resetDay();const results=await Promise.allSettled(st.positions.map(async p=>{const k=await market(p.symbol);return {p,k,mark:k.at(-1).c}}));for(const r of results){if(r.status!=='fulfilled')continue;const {p,mark,k}=r.value;p.mark=mark;const bar=k.at(-1);if(bar.t>Date.parse(p.openedAt) && (bar.l<=p.stop||bar.h>=p.take)){ // pessimista se ambos tocam no mesmo candle
+  const exit=bar.l<=p.stop?p.stop:p.take;close(p.symbol,exit,'STOP/ALVO SIMULADO');}}
+ resetDay();save();return snapshot();}
+function close(sym,exit,reason){const i=st.positions.findIndex(x=>x.symbol===sym);if(i<0)throw Error('Posição não encontrada');const p=st.positions[i],proceeds=p.qty*exit*(1-FEE);st.cash+=proceeds;st.trades.unshift({symbol:sym,entry:p.entry,exit,net:proceeds-p.cost,reason,closedAt:new Date().toISOString()});st.positions.splice(i,1);save();}
+function snapshot(){resetDay();return {mode:'PAPER_ONLY',cash:st.cash,equity:equity(),dayPnl:pnl(),dailyGoal:GOAL,dailyLoss:LOSS,day:st.day,openedToday:st.openedToday,maxTrades:MAX_TRADES,paused:st.paused,blockReason:blocked(),positions:st.positions,trades:st.trades.slice(0,20),candidates:st.candidates,scanAt:st.scanAt,persistence:'FILE_EPHEMERAL_ON_RENDER'}}
+async function scan(context){
+ await refresh();
+ const out=[];
+ for(const sym of ASSETS){
+  try{
+   const k=await market(sym),t=technical(k);
+   if(!t.ok){out.push({symbol:sym,status:'SEM_SINAL'});continue;}
+   let ctx;
+   try{ctx=await context(sym);}catch(e){ctx={status:'INCONCLUSIVO',reason:'Consulta externa falhou'};}
+   out.push({symbol:sym,status:'REVISAR',price:t.price,candle:t.candle,context:ctx});
+  }catch(e){out.push({symbol:sym,status:'ERRO',reason:e.message});}
  }
- lastCheck={at:new Date().toISOString(),records};return lastCheck;
+ st.candidates=out;st.scanAt=new Date().toISOString();save();return snapshot();
 }
-function simulateConfirmed(symbol,price){
- resetDay();if(!SYMBOLS.includes(symbol)||!Number.isFinite(price)||price<=0)throw Error('Entrada inválida');
- if(pnl()>=TARGET_DAILY||pnl()<=-LOSS_DAILY)throw Error('Limite diário atingido');
- if(trades>=MAX_TRADES_PER_DAY)throw Error('Máximo de operações do dia');
- if(positions.some(p=>p.symbol===symbol))throw Error('Já existe posição no ativo');
- const candidate=lastCheck?.records?.find(x=>x.symbol===symbol&&x.status==='PENDENTE DE REVISÃO'&&Date.now()-Date.parse(lastCheck.at)<30*60e3);
- if(!candidate)throw Error('Candidato sem revisão recente');
- const budget=Math.min(opening*CAPITAL_PER_TRADE,balance);const qty=budget/price;
- balance-=budget*(1+FEE);positions.push({symbol,entry:price,qty,feeEntry:budget*FEE,stop:price*0.99,take:price*1.015,opened:new Date().toISOString()});trades++;
- return {symbol,simulation:true,entry:price,qty,stop:price*.99,take:price*1.015};
-}
-function settle(symbol,price){
- const idx=positions.findIndex(p=>p.symbol===symbol);if(idx<0)throw Error('Sem posição simulada');const p=positions[idx];if(!Number.isFinite(price)||price<=0)throw Error('Preço inválido');
- const gross=p.qty*price,fee=gross*FEE;balance+=gross-fee;const result=gross-fee-p.qty*p.entry-p.feeEntry;
- positions.splice(idx,1);history.unshift({symbol,simulation:true,result,at:new Date().toISOString()});return {result,balance};
-}
-function snapshot(){resetDay();return {mode:'PAPER_ONLY',day,balance,opening,dayPnl:pnl(),dailyProfitStop:TARGET_DAILY,dailyLossStop:LOSS_DAILY,maxTrades:MAX_TRADES_PER_DAY,trades,positions,history:history.slice(0,20),lastCheck};}
-module.exports={inspect,simulateConfirmed,settle,snapshot};
+async function enter(sym){await refresh();if(!ASSETS.includes(sym))throw Error('Ativo inválido');const why=blocked();if(why)throw Error(why);if(st.positions.some(p=>p.symbol===sym))throw Error('Posição já aberta');const c=st.candidates.find(x=>x.symbol===sym&&x.status==='REVISAR'&&x.price>0);if(!c||!st.scanAt||Date.now()-Date.parse(st.scanAt)>30*60e3)throw Error('Candidato não revisado recentemente');const k=await market(sym),price=k.at(-1).c;if(Math.abs(price-c.price)/c.price>.02)throw Error('Preço variou: refaça análise');const budget=Math.min(st.dayStart*ALLOC,st.cash/(1+FEE));if(budget<1)throw Error('Saldo virtual insuficiente');const qty=budget/price,cost=budget*(1+FEE);st.cash-=cost;st.positions.push({symbol:sym,qty,entry:price,mark:price,cost,stop:price*.99,take:price*1.015,openedAt:new Date().toISOString()});st.openedToday++;st.candidates=st.candidates.filter(x=>x.symbol!==sym);save();return snapshot();}
+function pause(flag){st.paused=Boolean(flag);save();return snapshot()}
+module.exports={snapshot,refresh,scan,enter,pause};
