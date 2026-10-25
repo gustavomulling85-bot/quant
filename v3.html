@@ -26,18 +26,19 @@ details{margin-top:6px;font-size:13px;color:var(--mut)}li{margin:3px 0}
 .obs{border-left:3px solid var(--mut);padding-left:8px;margin-top:8px;font-size:13px;color:var(--mut)}
 table.t{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}table.t td,table.t th{padding:4px 2px;text-align:right}table.t td:first-child,table.t th:first-child{text-align:left}th{color:var(--mut);font-weight:500}
 .tv{height:380px;border-radius:10px;overflow:hidden;margin-top:10px;background:#0b111a}
+.ver{margin-top:8px;padding:8px;border-radius:8px;border:1px solid;font-size:13px}
 </style></head><body>
 <div class="top"><div><h1>Agente Quant V3</h1><div class="mut" id="upd">Rompimento de 20 dias · diário · só compra</div></div>
 <button id="go">Analisar</button></div>
 <div id="out"></div>
 <div class="card"><h2>Gráficos (estilo Binance)</h2>
-<div class="mut" style="margin-top:6px">Candles diários com EMA 50 e EMA 200. Pinça para zoom.</div>
+<div class="mut" style="margin-top:6px">Candles diários. Pinça para zoom.</div>
 <div class="tv" id="tv_btc"></div>
 <div class="tv" id="tv_eth"></div></div>
 <div class="card" id="cfg"></div>
 <div class="card" id="bt"></div>
 <div class="card" id="hist"></div>
-<p class="mut">Só avisa — não executa ordens. Não é recomendação de investimento. Estratégia: rompimento Donchian 20 dias no diário, apenas compra (spot). Sinais raros: semanas sem nada é normal.</p>
+<p class="mut">Só avisa — não executa ordens. Não é recomendação de investimento. Estratégia: rompimento Donchian 20 dias no diário, apenas compra (spot). O candle diário fecha às 21:00 de Brasília — basta conferir 1x por dia após esse horário. Sinais raros: semanas sem nada é normal.</p>
 
 <script>
 const CFG={symbols:["BTCUSDT","ETHUSDT"],scoreMin:85};
@@ -80,6 +81,22 @@ function plano(k){const e=last(k).c,a=atr(k),stop=e-2*a;
  if(pct<1||pct>12)return null;
  return{e,stop,tp1:e+1.5*risco,tp2:e+3*risco,pct}}
 
+function revisor(k,score,veto){
+ const c=k.map(x=>x.c),px=last(c),e50=ema(c,50);
+ const hi20=Math.max(...k.slice(-21,-1).map(x=>x.h));
+ const dist=(hi20-px)/px*100,r=rsi(c.slice(-100));
+ const subida5=(px-k[k.length-6].c)/k[k.length-6].c*100;
+ const colado=Math.abs(px-last(e50))/px*100<1;
+ if(veto)return["no","🔴 AGENTE: NÃO VALIDA","preço abaixo da EMA200 — tendência contrária"];
+ if(score>=CFG.scoreMin){
+  if(r>75)return["warn","🟡 AGENTE: CAUTELA",`sinal válido mas RSI ${r.toFixed(0)} — comprando euforia, risco de topo`];
+  if(subida5>12)return["warn","🟡 AGENTE: CAUTELA",`rompimento esticado: +${subida5.toFixed(1)}% em 5 dias — entrada tardia`];
+  return["ok","🟢 AGENTE: VALIDA","rompimento saudável, critérios e contexto alinhados"]}
+ if(dist>5)return["no","🔴 AGENTE: NÃO VALIDA",`faltam ${dist.toFixed(1)}% até a máxima de 20d — sem setup próximo`];
+ if(colado)return["no","🔴 AGENTE: NÃO VALIDA","preço colado na EMA50 — zona de serra, aguardar definição"];
+ if(dist<=3&&score>=55)return["warn","🟡 AGENTE: ATENÇÃO",`a ${dist.toFixed(1)}% do gatilho — pode armar sinal em breve, acompanhar`];
+ return["no","🔴 AGENTE: NÃO VALIDA",`score ${score}/100 — critérios insuficientes`]}
+
 const fmt=x=>x.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 function compraHtml(L){const vt=L.veto,c=L.score>=CFG.scoreMin&&!vt;
  return `<div class="sc"><b>Compra</b><div class="bar"><i class="${c?"hi":""}" style="width:${L.score}%"></i></div><span class="num">${L.score}</span></div>
@@ -89,19 +106,25 @@ function compraHtml(L){const vt=L.veto,c=L.score>=CFG.scoreMin&&!vt;
 function copiaAgente(sym){const A=LASTA[sym];if(!A)return;
  const txt=`Análise do Agente Quant V3 (rompimento 20 dias, diário, só compra) para ${sym}:
 Preço: ${fmt(A.px)} | Score: ${A.score}/100 | Veto EMA200: ${A.veto?"SIM":"não"}
+Veredito do revisor embutido: ${A.ver[1]} — ${A.ver[2]}
 Critérios:
 ${A.it.map(i=>`- ${i[0]}: ${i[1]}/${i[2]} (${i[3]})`).join("\n")}
 ${A.p?`Plano: entrada ${fmt(A.p.e)}, stop ${fmt(A.p.stop)} (${A.p.pct.toFixed(1)}%), TP1 ${fmt(A.p.tp1)}, TP2 ${fmt(A.p.tp2)}`:"Sem plano (score abaixo da nota ou veto)."}
-Pergunta: como agente revisor, avalie o contexto deste sinal/quase-sinal, aponte riscos que os critérios não capturam e diga se concorda ou vetaria. Não é pedido de recomendação de investimento.`;
- (navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(txt):Promise.reject()).then(()=>alert("Análise copiada! Cole na conversa com o Claude para o parecer do agente revisor."),()=>{prompt("Copie o texto abaixo:",txt)})}
+Pergunta: como agente revisor, faça a análise profunda deste caso, aponte riscos que os critérios não capturam e diga se concorda ou vetaria. Não é pedido de recomendação de investimento.`;
+ const fim=()=>{try{window.open("https://claude.ai/new","_blank")}catch(e){}};
+ (navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(txt):Promise.reject())
+  .then(()=>{alert("Análise copiada! O Claude vai abrir — é só COLAR e enviar.");fim()},
+        ()=>{prompt("Copie o texto abaixo e cole no Claude:",txt);fim()})}
 
 async function scan(){if(busy)return;busy=true;$("go").disabled=true;$("upd").textContent="Analisando…";
  const res=await Promise.all(CFG.symbols.map(async sym=>{try{return{sym,k:await klines(sym)}}catch(e){return{sym,err:e.message}}}));
  let html="";
  for(const r of res){
   if(r.err){html+=`<div class="card warn"><b>${r.sym}</b><br>${r.err}</div>`;continue}
-  const[score,it,veto]=avaliar(r.k),L={score,it,veto},p=(!veto&&score>=60)?plano(r.k):null;
-  LASTA[r.sym]={px:last(r.k).c,score,it,veto,p:(!veto&&score>=CFG.scoreMin)?plano(r.k):p};
+  const[score,it,veto]=avaliar(r.k),L={score,it,veto},ver=revisor(r.k,score,veto);
+  LASTA[r.sym]={px:last(r.k).c,score,it,veto,ver,p:(!veto&&score>=60)?plano(r.k):null};
+  const cor=ver[0]=="ok"?"var(--ok)":ver[0]=="warn"?"var(--acc)":"var(--bad)";
+  const verHtml=`<div class="ver" style="border-color:${cor};color:${cor}"><b>${ver[1]}</b><br><span style="color:var(--mut)">${ver[2]}</span></div>`;
   let body="";
   if(!veto&&score>=CFG.scoreMin){const pl=plano(r.k);
    if(pl){body=`<div class="sig"><b>COMPRAR — score ${score}/100</b>
@@ -114,8 +137,8 @@ async function scan(){if(busy)return;busy=true;$("go").disabled=true;$("upd").te
    body=`<div class="mut" style="margin-top:8px">${score>=60&&!veto?`Quase sinal (${score}/${CFG.scoreMin}) — registrado em Observação. `:""}Sem entrada — aguardar. Falta: ${f.join(", ")||"veto da EMA200"}</div>`}
   html+=`<div class="card"><div style="display:flex;justify-content:space-between"><h2>${r.sym.slice(0,-4)}/${r.sym.slice(-4)}</h2><span>${fmt(last(r.k).c)}</span></div>
   <div class="mut" style="font-size:12px">Candle diário fechado em ${new Date(last(r.k).t+864e5).toLocaleDateString("pt-BR")}</div>
-  ${compraHtml(L)}${body}
-  <div class="row"><button class="s" onclick="copiaAgente('${r.sym}')">Copiar p/ Agente (revisor IA)</button></div></div>`}
+  ${compraHtml(L)}${verHtml}${body}
+  <div class="row"><button class="s" onclick="copiaAgente('${r.sym}')">Revisão profunda (abre o Claude)</button></div></div>`}
  $("out").innerHTML=html;renderHist();
  $("upd").textContent="Atualizado às "+new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
  busy=false;$("go").disabled=false}
@@ -128,7 +151,7 @@ function renderHist(){const h=ls.get("aq3_hist",[]),o=ls.get("aq3_obs",[]);
  $("hist").innerHTML=`<h2>Histórico de sinais</h2>`+(h.length?h.slice(0,10).map(x=>`<div style="margin-top:8px;font-size:13px"><b>${x.sym.slice(0,-4)} COMPRA</b> ${x.score}/100 — ${new Date(x.t).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}<br><span class="mut">Entrada ${fmt(x.e)} | Stop ${fmt(x.stop)} | TP1 ${fmt(x.tp1)} | TP2 ${fmt(x.tp2)}</span></div>`).join(""):`<div class="mut" style="margin-top:6px">Nenhum sinal ainda. No diário, semanas em silêncio são normais.</div>`)
  +`<h2 style="margin-top:14px">Observação — não operar</h2>`+(o.length?o.slice(0,10).map(x=>`<div class="obs"><b>${x.sym.slice(0,-4)}</b> nota ${x.score} — ${new Date(x.t).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit"})} · preço ${fmt(x.px)}</div>`).join(""):`<div class="mut" style="margin-top:6px">Nada registrado.</div>`)}
 
-function renderCfg(){$("cfg").innerHTML=`<h2>Ajustes</h2><div class="row"><label class="mut">Nota mínima</label><select id="smin" onchange="setCfg()">${[70,75,80,85,90].map(v=>`<option${v==CFG.scoreMin?" selected":""}>${v}</option>`).join("")}</select></div><p class="mut" style="margin:6px 0 0">Análise no fechamento do candle diário (21:00 de Brasília). Reabra o app após esse horário para ver o dia novo.</p>`}
+function renderCfg(){$("cfg").innerHTML=`<h2>Ajustes</h2><div class="row"><label class="mut">Nota mínima</label><select id="smin" onchange="setCfg()">${[70,75,80,85,90].map(v=>`<option${v==CFG.scoreMin?" selected":""}>${v}</option>`).join("")}</select></div><p class="mut" style="margin:6px 0 0">Análise no fechamento do candle diário (21:00 de Brasília). Confira 1x por dia após esse horário.</p>`}
 function setCfg(){CFG.scoreMin=+$("smin").value;ls.set("aq3_min",CFG.scoreMin);scan()}
 
 function renderBt(){$("bt").innerHTML=`<h2>Backtest</h2><p class="mut" style="margin:6px 0 10px">Regras V3 (rompimento 20 dias, diário, só compra) em ~2,7 anos de histórico.</p><div class="row"><button id="btgo" onclick="backtest(0)">Rodar backtest</button><button id="btcmp" class="s" onclick="backtest(1)">Comparar notas</button></div><div id="btm" class="mut" style="margin-top:8px"></div><div id="btr">${ls.get("aq3_bt","")}</div>`}
@@ -172,8 +195,8 @@ async function backtest(cmp){const b1=$("btgo"),b2=$("btcmp"),msg=t=>{$("btm").t
  b1.disabled=b2.disabled=false}
 
 function tvInit(){const s=document.createElement("script");s.src="https://s3.tradingview.com/tv.js";
- s.onload=()=>{new TradingView.widget({container_id:"tv_btc",symbol:"BINANCE:BTCUSDT",interval:"D",theme:"dark",style:"1",locale:"br",autosize:true,hide_top_toolbar:false,studies:["MAExp@tv-basicstudies","MAExp@tv-basicstudies"]});
- new TradingView.widget({container_id:"tv_eth",symbol:"BINANCE:ETHUSDT",interval:"D",theme:"dark",style:"1",locale:"br",autosize:true,studies:["MAExp@tv-basicstudies","MAExp@tv-basicstudies"]})};
+ s.onload=()=>{new TradingView.widget({container_id:"tv_btc",symbol:"BINANCE:BTCUSDT",interval:"D",theme:"dark",style:"1",locale:"br",autosize:true});
+ new TradingView.widget({container_id:"tv_eth",symbol:"BINANCE:ETHUSDT",interval:"D",theme:"dark",style:"1",locale:"br",autosize:true})};
  document.head.appendChild(s)}
 
 $("go").onclick=scan;renderCfg();renderBt();renderHist();scan();tvInit();
