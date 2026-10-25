@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0d1520">
+<title>Laboratório Quant</title>
+<style>
+:root{--bg:#0d1520;--card:#15202e;--bd:#25354a;--tx:#e8edf3;--mut:#8497ad;--ok:#2fd28c;--bad:#ff5a6e;--acc:#f0b90b;color-scheme:dark}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,sans-serif;padding:12px;max-width:560px;margin:auto}
+h1{font-size:20px;margin:0 0 4px}h2{font-size:16px;margin:0 0 6px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:12px}
+.mut{color:var(--mut);font-size:13px}
+button,select{font:inherit;border-radius:10px;padding:10px 12px;border:1px solid var(--bd)}
+button{background:var(--acc);color:#1a1400;font-weight:600;border:0;flex:1}button.s{background:#25354a;color:var(--tx)}button:disabled{opacity:.5}
+select{background:var(--bg);color:var(--tx);width:100%}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:8px}.g label{font-size:12px;color:var(--mut)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}td,th{padding:4px 2px;text-align:right}td:first-child,th:first-child{text-align:left}th{color:var(--mut);font-weight:500}
+.p{color:var(--ok)}.n{color:var(--bad)}
+</style></head><body>
+<h1>Laboratório Quant</h1>
+<div class="mut" style="margin-bottom:10px">Compara variações do rompimento diário nos 8 ativos, com resultado por semestre. Só histórico e análise: não opera nem avisa.</div>
+<div class="card"><div class="g">
+<div><label>Lado</label><select id="lado"><option value="C">Só compra</option><option value="V">Só venda (futuros)</option><option value="A">Compra e venda</option></select></div>
+<div><label>Janela do rompimento</label><select id="L"><option>10</option><option selected>20</option><option>55</option></select></div>
+<div><label>Filtro de tendência</label><select id="f"><option value="2">EMA50 e EMA200</option><option value="1" selected>Só EMA200</option><option value="0">Nenhum</option></select></div>
+<div><label>Stop (× ATR)</label><select id="m"><option>1.5</option><option selected>2</option><option>3</option></select></div>
+<div style="grid-column:span 2"><label>Entrada</label><select id="ent"><option value="o">Abertura do dia seguinte (realista)</option><option value="c">Fechamento do sinal (como a V3)</option></select></div>
+</div>
+<div style="display:flex;gap:8px;margin-top:10px"><button id="b1">Rodar</button><button id="b2" class="s">Comparar variações</button></div>
+<div class="mut" id="msg" style="margin-top:8px"></div></div>
+<div class="card" id="hoje" style="display:none"></div><div class="card" id="res" style="display:none"></div>
+<script>
+//ENGINE-START
+const SYMS=["BTC","ETH","SOL","BNB","XRP","LINK","AVAX","ADA"],HOSTS=["https://api.binance.com","https://data-api.binance.vision"],D={};
+const sum=a=>a.reduce((x,y)=>x+y,0);
+function ema(v,n){const k=2/(n+1),o=Array(v.length).fill(null);let e=sum(v.slice(0,n))/n;o[n-1]=e;for(let i=n;i<v.length;i++){e=v[i]*k+e*(1-k);o[i]=e}return o}
+function atrS(k,n=14){const o=Array(k.length).fill(null),tr=k.map((x,i)=>i?Math.max(x.h-x.l,Math.abs(x.h-k[i-1].c),Math.abs(x.l-k[i-1].c)):x.h-x.l);
+ let a=sum(tr.slice(1,n+1))/n;o[n]=a;for(let i=n+1;i<k.length;i++){a=(a*(n-1)+tr[i])/n;o[i]=a}return o}
+function prep(k){const c=k.map(x=>x.c);return{k,e50:ema(c,50),e200:ema(c,200),a:atrS(k)}}
+function hi(k,i,L){let m=-1e99;for(let j=i-L;j<i;j++)m=Math.max(m,k[j].h);return m}
+function lo(k,i,L){let m=1e99;for(let j=i-L;j<i;j++)m=Math.min(m,k[j].l);return m}
+function sinal(d,i,p,dir){const k=d.k,c=k[i].c,e2=d.e200[i],e5=d.e50[i];
+ if(dir>0){const f=p.f==0||(c>e2&&(p.f==1||e5>e2));return f&&c>hi(k,i,p.L)}
+ const f=p.f==0||(c<e2&&(p.f==1||e5<e2));return f&&c<lo(k,i,p.L)}
+function sim(k,j0,dir,E,stop){const R=Math.abs(E-stop),t1=E+dir*1.5*R,t2=E+dir*3*R,fim=Math.min(k.length-1,j0+89);let est=0;
+ for(let j=j0;j<=fim;j++){const c=k[j],w=dir>0?c.l:c.h,b=dir>0?c.h:c.l;
+  if(est==0){if(dir*(w-stop)<=0)return{r:-1,j};if(dir*(b-t1)>=0)est=1}
+  else{if(dir*(w-E)<=0)return{r:.75,j};if(dir*(b-t2)>=0)return{r:2.25,j}}}
+ const x=dir*(k[fim].c-E)/R;return{r:est?.75+.5*x:x,j:fim}}
+function run(p){const T=[];
+ for(const s of SYMS){const d=D[s],k=d.k;let livre=0;
+  for(let i=200;i<k.length-1;i++){if(i<livre)continue;
+   for(const dir of p.lado=="C"?[1]:p.lado=="V"?[-1]:[1,-1]){
+    if(!sinal(d,i,p,dir))continue;
+    const E=p.ent=="o"?k[i+1].o:k[i].c,stop=E-dir*p.m*d.a[i],R=Math.abs(E-stop);
+    if(R/E<.01||R/E>.15)continue;
+    const r=sim(k,i+1,dir,E,stop);T.push({s,t:k[i].t,dir,net:r.r-.002/(R/E)});livre=r.j+1;break}}}
+ return T.sort((a,b)=>a.t-b.t)}
+function calc(T){let eq=0,pk=0,dd=0;const sem={};for(const x of T){eq+=x.net;pk=Math.max(pk,eq);dd=Math.max(dd,pk-eq);
+ const d=new Date(x.t),h=d.getUTCFullYear()+(d.getUTCMonth()<6?"-S1":"-S2");sem[h]=(sem[h]||0)+x.net}
+ return{n:T.length,w:T.filter(x=>x.net>0).length,sum:eq,dd,sem}}
+const PRE=[["V3 base (compra, 20d, EMA200, entrada no fechamento)",{lado:"C",L:20,f:1,m:2,ent:"c"}],
+["Mesma, entrada na abertura seguinte",{lado:"C",L:20,f:1,m:2,ent:"o"}],
+["Compra, 10 dias",{lado:"C",L:10,f:1,m:2,ent:"o"}],
+["Compra, 55 dias",{lado:"C",L:55,f:1,m:2,ent:"o"}],
+["Compra, EMA50 e EMA200",{lado:"C",L:20,f:2,m:2,ent:"o"}],
+["Venda espelhada, 20 dias",{lado:"V",L:20,f:1,m:2,ent:"o"}],
+["Compra e venda, 20 dias",{lado:"A",L:20,f:1,m:2,ent:"o"}],
+["Compra e venda, 10 dias",{lado:"A",L:10,f:1,m:2,ent:"o"}]];
+//ENGINE-END
+const $=id=>document.getElementById(id),P=()=>({lado:$("lado").value,L:+$("L").value,f:+$("f").value,m:+$("m").value,ent:$("ent").value});
+const fR=v=>(v>=0?"+":"")+v.toFixed(1)+"R",sg=x=>(x>=0?"+":"")+x.toFixed(1)+"%",pc=x=>x.n?Math.round(x.w/x.n*100)+"%":"–",cl=v=>v>=0?"p":"n";
+const fx=x=>x.toLocaleString("en-US",{maximumFractionDigits:x<10?4:2});
+async function load(msg){for(const s of SYMS){if(D[s])continue;msg(`Baixando ${s}…`);let raw=null;
+ for(const h of HOSTS){try{const r=await fetch(`${h}/api/v3/klines?symbol=${s}USDT&interval=1d&limit=1000`);if(!r.ok)throw 0;raw=await r.json();break}catch(e){}}
+ if(!raw)throw new Error("Falha ao baixar "+s+". Verifique a internet ou desligue a VPN.");
+ D[s]=prep(raw.slice(0,-1).map(x=>({t:+x[0],o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5]})))}}
+function hoje(p){return SYMS.map(s=>{const d=D[s],k=d.k,i=k.length-1,c=k[i].c,e2=d.e200[i],ps=[];
+ for(const dir of p.lado=="C"?[1]:p.lado=="V"?[-1]:[1,-1])if(sinal(d,i,p,dir))ps.push(`<b class="${dir>0?"p":"n"}">${dir>0?"COMPRA":"VENDA"} válida</b> · stop ~${fx(c-dir*p.m*d.a[i])}`);
+ return `<tr><td>${s}</td><td>${c>e2?"acima":"abaixo"} da EMA200</td><td>${ps.join(" ")||`p/ cima ${sg((hi(k,i,p.L)/c-1)*100)} · p/ baixo ${sg((lo(k,i,p.L)/c-1)*100)}`}</td></tr>`}).join("")}
+async function go(cmp){const b=[$("b1"),$("b2")];b.forEach(x=>x.disabled=true);
+ try{await load(m=>$("msg").textContent=m);$("msg").textContent="";const p=P(),k=D.BTC.k,
+  per=`${new Date(k[200].t).toLocaleDateString("pt-BR")} a ${new Date(k[k.length-1].t).toLocaleDateString("pt-BR")}`;
+  $("hoje").style.display=$("res").style.display="block";
+  $("hoje").innerHTML=`<h2>Prospecção hoje</h2><div class="mut">Último candle diário fechado. Sem sinal, mostra a distância até romper a máxima (cima) ou a mínima (baixo) da janela. Valores aproximados.</div><table>${hoje(p)}</table>`;
+  let h;
+  if(cmp){h=`<h2>Comparação de variações</h2><div class="mut">${per}. Taxa 0,1% por lado. Procure variações positivas na maioria dos semestres, não só no total.</div><table><tr><th></th><th>Sinais</th><th>Acertos</th><th>Resultado</th><th>Queda</th><th>Sem.+</th></tr>`+
+   PRE.map(([n,q])=>{const x=calc(run(q)),v=Object.values(x.sem);return `<tr><td>${n}</td><td>${x.n}</td><td>${pc(x)}</td><td class="${cl(x.sum)}">${fR(x.sum)}</td><td>-${x.dd.toFixed(1)}R</td><td>${v.filter(a=>a>0).length}/${v.length}</td></tr>`}).join("")+`</table>`}
+  else{const T=run(p),x=calc(T),meses=(k.length-200)/30.4;
+   h=`<h2>Resultado</h2><div class="mut">${per}. Taxa 0,1% por lado.</div><table><tr><th>Sinais</th><th>Por mês</th><th>Acertos</th><th>Resultado</th><th>Queda máx.</th></tr><tr><td>${x.n}</td><td>${(x.n/meses).toFixed(1)}</td><td>${pc(x)}</td><td class="${cl(x.sum)}">${fR(x.sum)}</td><td>-${x.dd.toFixed(1)}R</td></tr></table>
+   <div class="mut" style="margin-top:10px">Por semestre</div><table>${Object.keys(x.sem).sort().map(q=>`<tr><td>${q}</td><td class="${cl(x.sem[q])}">${fR(x.sem[q])}</td></tr>`).join("")}</table>
+   <div class="mut" style="margin-top:10px">Por ativo</div><table>${SYMS.map(s=>{const y=calc(T.filter(a=>a.s==s));return `<tr><td>${s}</td><td>${y.n}</td><td>${pc(y)}</td><td class="${cl(y.sum)}">${fR(y.sum)}</td></tr>`}).join("")}</table>`}
+  h+=`<p class="mut" style="margin-top:10px">Não inclui funding nem deslizamento. Venda exige futuros ou margem. Muitos ativos sobem e caem juntos, então os sinais não são independentes. Poucos sinais ou um só regime de mercado não provam nada.</p>`;
+  $("res").innerHTML=h}
+ catch(e){$("msg").textContent=e.message}
+ b.forEach(x=>x.disabled=false)}
+$("b1").onclick=()=>go(0);$("b2").onclick=()=>go(1);
+</script></body></html>
