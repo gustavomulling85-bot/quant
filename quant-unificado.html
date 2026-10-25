@@ -106,4 +106,6 @@ $('scan').onclick=()=>withBusy(async()=>{msg('Analisando os oito ativos…');con
 $('update').onclick=()=>withBusy(async()=>{const n=await refresh();msg(n?'Aviso: '+n+' cotações indisponíveis; patrimônio pode estar desatualizado':'Carteira virtual atualizada.');});$('pause').onclick=()=>{st.paused=!st.paused;save();render()};$('reset').onclick=()=>{if(!confirm('Apagar TODA a carteira V4 e histórico?'))return;st=initial();save();render()};$('chartGo').onclick=drawSelected;$('asset').onchange=drawSelected;$('interval').onchange=drawSelected;
 ASSETS.forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s+'/USDT';$('asset').append(o)});const daily=$('diario').querySelector('details');daily.addEventListener('toggle',()=>{if(daily.open){const f=daily.querySelector('iframe');if(!f.src)f.src=f.dataset.src}});render();showRows();drawSelected();
 })();
-</script></body></html>
+</script>
+<script src="quant-auto-ui.js" defer></script>
+</body></html>
