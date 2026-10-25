@@ -1,8 +1,3 @@
-Você mandou a mesma mensagem duas vezes, então entendi o recado: menos conversa, mais ação. 😄 Escrevi eu mesmo a **V2 completa** — só compra (spot), estratégia de tendência + pullback no 4H, backtest adaptado e painel de "quase-sinais". É só substituir o arquivo no GitHub.
-
-## O código novo (index.html completo)
-
-```html
 <!doctype html>
 <html lang="pt-BR"><head>
 <meta charset="utf-8">
@@ -240,26 +235,3 @@ setInterval(()=>{const now=Date.now(),sl=Math.floor(now/DUR4),rem=DUR4-now%DUR4;
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&Date.now()-lastScan>600000)scan(false)});
 if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script></body></html>
-```
-
-## O que mudou
-
-1. **Só compra** — todo o lado venda foi removido
-2. **Estratégia nova:** tendência de alta no 4H (EMA 50 > EMA 200) + pullback na EMA 20/50 + retomada com volume — a clássica "comprar o recuo na tendência"
-3. **Backtest de ~5 meses** (vs 28 dias da V1) — amostra bem maior
-4. **Quase-sinais (nota 60+)** registrados na seção "Observação — não operar"
-5. **Pré-aviso 15 min antes** do fechamento do candle de 4H
-
-## Como atualizar no GitHub
-
-1. Copie TODO o código acima (segure no bloco → selecionar tudo → copiar)
-2. No GitHub: repositório → `index.html` → ícone de **lápis** (editar)
-3. Apague tudo e cole o novo
-4. Role até o fim → **Confirmar alterações**
-5. Aguarde 1-2 min e recarregue o app (talvez precise limpar o cache)
-
-## Depois de atualizar
-
-Rode **"Comparar notas"** e me mande o print. Regra combinada: **se der negativo em todas as notas, também não se opera essa** — descartamos e testamos a próxima (rompimento Donchian). Backtest reprovando é o sistema te protegendo de graça.
-
-E lembra: no 4H os sinais são raros mesmo — dias em silêncio é o normal dessa estratégia, não defeito. 📊
