@@ -3,7 +3,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0d1520">
-<title>Agente Quant V3 — Rompimento Diário</title>
+<title>Agente Quant V3 Multi — Rompimento Diário</title>
 <style>
 :root{--bg:#0d1520;--card:#15202e;--bd:#25354a;--tx:#e8edf3;--mut:#8497ad;--ok:#2fd28c;--bad:#ff5a6e;--acc:#f0b90b;color-scheme:dark}
 *{box-sizing:border-box}
@@ -17,7 +17,7 @@ button{font:inherit;border:0;border-radius:10px;padding:10px 14px;background:var
 button.s{background:#25354a;color:var(--tx)}button:disabled{opacity:.5}
 select{font:inherit;width:100%;padding:9px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--tx)}
 .row{display:flex;gap:8px;align-items:center;margin-top:8px}.row>*{flex:1}
-.sc{display:flex;align-items:center;gap:8px;margin-top:8px}.sc b{width:62px}.bar{flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;background:var(--mut)}
+.sc{display:flex;align-items:center;gap:8px;margin-top:6px}.sc b{width:62px}.bar{flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;background:var(--mut)}
 .bar i.hi{background:var(--ok)}.num{width:44px;text-align:right}
 details{margin-top:6px;font-size:13px;color:var(--mut)}li{margin:3px 0}
 .sig{border:2px solid var(--ok);border-radius:10px;padding:10px;margin-top:10px;background:#0f2a22}
@@ -27,21 +27,22 @@ details{margin-top:6px;font-size:13px;color:var(--mut)}li{margin:3px 0}
 table.t{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}table.t td,table.t th{padding:4px 2px;text-align:right}table.t td:first-child,table.t th:first-child{text-align:left}th{color:var(--mut);font-weight:500}
 .tv{height:380px;border-radius:10px;overflow:hidden;margin-top:10px;background:#0b111a}
 .ver{margin-top:8px;padding:8px;border-radius:8px;border:1px solid;font-size:13px}
+.mini{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border:1px solid var(--bd);border-radius:10px;margin-top:8px;font-size:14px}
 </style></head><body>
-<div class="top"><div><h1>Agente Quant V3</h1><div class="mut" id="upd">Rompimento de 20 dias · diário · só compra</div></div>
+<div class="top"><div><h1>Agente Quant V3 Multi</h1><div class="mut" id="upd">Rompimento 20 dias · diário · só compra · 8 ativos</div></div>
 <button id="go">Analisar</button></div>
+<div class="card" id="resumo"></div>
 <div id="out"></div>
-<div class="card"><h2>Gráficos (estilo Binance)</h2>
-<div class="mut" style="margin-top:6px">Candles diários. Pinça para zoom.</div>
-<div class="tv" id="tv_btc"></div>
-<div class="tv" id="tv_eth"></div></div>
+<div class="card"><h2>Gráfico (estilo Binance)</h2>
+<div class="row"><select id="tvsym" onchange="tvShow()"></select></div>
+<div class="tv" id="tvbox"></div></div>
 <div class="card" id="cfg"></div>
 <div class="card" id="bt"></div>
 <div class="card" id="hist"></div>
-<p class="mut">Só avisa — não executa ordens. Não é recomendação de investimento. Estratégia: rompimento Donchian 20 dias no diário, apenas compra (spot). O candle diário fecha às 21:00 de Brasília — basta conferir 1x por dia após esse horário. Sinais raros: semanas sem nada é normal.</p>
+<p class="mut">Só avisa — não executa ordens. Não é recomendação de investimento. Estratégia: rompimento Donchian 20 dias no diário, apenas compra (spot), 8 ativos. Candle fecha às 21:00 de Brasília — confira 1x por dia após esse horário.</p>
 
 <script>
-const CFG={symbols:["BTCUSDT","ETHUSDT"],scoreMin:85};
+const CFG={symbols:["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","LINKUSDT","AVAXUSDT","ADAUSDT"],scoreMin:85};
 const HOSTS=["https://api.binance.com","https://data-api.binance.vision"];
 const $=id=>document.getElementById(id);
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
@@ -62,7 +63,7 @@ function rsi(v,n=14){const g=[],l=[];for(let i=1;i<v.length;i++){g.push(Math.max
 function atr(c,n=14){const tr=[];for(let i=1;i<c.length;i++)tr.push(Math.max(c[i].h-c[i].l,Math.abs(c[i].h-c[i-1].c),Math.abs(c[i].l-c[i-1].c)));
  let a=sum(tr.slice(0,n))/n;for(const x of tr.slice(n))a=(a*(n-1)+x)/n;return a}
 
-function avaliar(k){const c=k.map(x=>x.c),it=[],f0=x=>x.toFixed(0);
+function avaliar(k){const c=k.map(x=>x.c),it=[],f0=x=>x<10?x.toFixed(3):x.toFixed(0);
  const e50=ema(c,50),e200=ema(c,200),cur=last(k),px=cur.c;
  const tend=px>last(e200)&&last(e50)>last(e200),veto=px<=last(e200);
  it.push(["Tendência (preço e EMA50 acima da EMA200 diária)",tend?25:0,25,`preço ${f0(px)}, EMA50 ${f0(last(e50))}, EMA200 ${f0(last(e200))}`]);
@@ -71,7 +72,7 @@ function avaliar(k){const c=k.map(x=>x.c),it=[],f0=x=>x.toFixed(0);
  const fresco=rompe&&cur.c<=hi20*1.03;
  it.push(["Rompimento fresco (até 3% acima da máxima)",fresco?15:0,15,rompe?`${((cur.c/hi20-1)*100).toFixed(1)}% acima`:"sem rompimento"]);
  const vols=k.map(x=>x.v),vm=sum(vols.slice(-21,-1))/20;
- it.push(["Volume acima da média de 20",last(vols)>vm?15:0,15,`vol ${last(vols).toFixed(0)} vs média ${vm.toFixed(0)}`]);
+ it.push(["Volume acima da média de 20",last(vols)>vm?15:0,15,`vol acima da média: ${last(vols)>vm?"sim":"não"}`]);
  const r=rsi(c.slice(-100));
  it.push(["RSI diário entre 50 e 80 (força sem euforia)",r>=50&&r<=80?15:0,15,`RSI ${r.toFixed(1)}`]);
  return[sum(it.map(i=>i[1])),it,veto]}
@@ -87,74 +88,71 @@ function revisor(k,score,veto){
  const dist=(hi20-px)/px*100,r=rsi(c.slice(-100));
  const subida5=(px-k[k.length-6].c)/k[k.length-6].c*100;
  const colado=Math.abs(px-last(e50))/px*100<1;
- if(veto)return["no","🔴 AGENTE: NÃO VALIDA","preço abaixo da EMA200 — tendência contrária"];
+ if(veto)return["no","🔴 NÃO VALIDA","abaixo da EMA200 — tendência contrária"];
  if(score>=CFG.scoreMin){
-  if(r>75)return["warn","🟡 AGENTE: CAUTELA",`sinal válido mas RSI ${r.toFixed(0)} — comprando euforia, risco de topo`];
-  if(subida5>12)return["warn","🟡 AGENTE: CAUTELA",`rompimento esticado: +${subida5.toFixed(1)}% em 5 dias — entrada tardia`];
-  return["ok","🟢 AGENTE: VALIDA","rompimento saudável, critérios e contexto alinhados"]}
- if(dist>5)return["no","🔴 AGENTE: NÃO VALIDA",`faltam ${dist.toFixed(1)}% até a máxima de 20d — sem setup próximo`];
- if(colado)return["no","🔴 AGENTE: NÃO VALIDA","preço colado na EMA50 — zona de serra, aguardar definição"];
- if(dist<=3&&score>=55)return["warn","🟡 AGENTE: ATENÇÃO",`a ${dist.toFixed(1)}% do gatilho — pode armar sinal em breve, acompanhar`];
- return["no","🔴 AGENTE: NÃO VALIDA",`score ${score}/100 — critérios insuficientes`]}
+  if(r>75)return["warn","🟡 CAUTELA",`RSI ${r.toFixed(0)} — comprando euforia`];
+  if(subida5>12)return["warn","🟡 CAUTELA",`esticado: +${subida5.toFixed(1)}% em 5 dias`];
+  return["ok","🟢 VALIDA","rompimento saudável, contexto alinhado"]}
+ if(dist>5)return["no","🔴 NÃO VALIDA",`faltam ${dist.toFixed(1)}% até o gatilho`];
+ if(colado)return["no","🔴 NÃO VALIDA","colado na EMA50 — zona de serra"];
+ if(dist<=3&&score>=55)return["warn","🟡 ATENÇÃO",`a ${dist.toFixed(1)}% do gatilho — pode armar sinal`];
+ return["no","🔴 NÃO VALIDA",`score ${score}/100 insuficiente`]}
 
-const fmt=x=>x.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
-function compraHtml(L){const vt=L.veto,c=L.score>=CFG.scoreMin&&!vt;
- return `<div class="sc"><b>Compra</b><div class="bar"><i class="${c?"hi":""}" style="width:${L.score}%"></i></div><span class="num">${L.score}</span></div>
- ${vt?'<div class="v">Veto: preço abaixo da EMA 200 diária</div>':""}
- <details><summary>Critérios</summary><ul>${L.it.map(i=>`<li>${i[0]}: <b>${i[1]}/${i[2]}</b> — ${i[3]}</li>`).join("")}</ul></details>`}
-
+const fmt=x=>x.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:x<10?4:2});
 function copiaAgente(sym){const A=LASTA[sym];if(!A)return;
- const txt=`Análise do Agente Quant V3 (rompimento 20 dias, diário, só compra) para ${sym}:
+ const txt=`Análise do Agente Quant V3 Multi (rompimento 20 dias, diário, só compra) para ${sym}:
 Preço: ${fmt(A.px)} | Score: ${A.score}/100 | Veto EMA200: ${A.veto?"SIM":"não"}
 Veredito do revisor embutido: ${A.ver[1]} — ${A.ver[2]}
 Critérios:
 ${A.it.map(i=>`- ${i[0]}: ${i[1]}/${i[2]} (${i[3]})`).join("\n")}
-${A.p?`Plano: entrada ${fmt(A.p.e)}, stop ${fmt(A.p.stop)} (${A.p.pct.toFixed(1)}%), TP1 ${fmt(A.p.tp1)}, TP2 ${fmt(A.p.tp2)}`:"Sem plano (score abaixo da nota ou veto)."}
-Pergunta: como agente revisor, faça a análise profunda deste caso, aponte riscos que os critérios não capturam e diga se concorda ou vetaria. Não é pedido de recomendação de investimento.`;
+${A.p?`Plano: entrada ${fmt(A.p.e)}, stop ${fmt(A.p.stop)} (${A.p.pct.toFixed(1)}%), TP1 ${fmt(A.p.tp1)}, TP2 ${fmt(A.p.tp2)}`:"Sem plano."}
+Pergunta: como agente revisor, faça a análise profunda, aponte riscos não capturados e diga se concorda ou vetaria. Não é recomendação de investimento.`;
  const fim=()=>{try{window.open("https://claude.ai/new","_blank")}catch(e){}};
  (navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(txt):Promise.reject())
-  .then(()=>{alert("Análise copiada! O Claude vai abrir — é só COLAR e enviar.");fim()},
-        ()=>{prompt("Copie o texto abaixo e cole no Claude:",txt);fim()})}
+  .then(()=>{alert("Copiado! O Claude vai abrir — cole e envie.");fim()},()=>{prompt("Copie:",txt);fim()})}
 
-async function scan(){if(busy)return;busy=true;$("go").disabled=true;$("upd").textContent="Analisando…";
+async function scan(){if(busy)return;busy=true;$("go").disabled=true;$("upd").textContent="Analisando 8 ativos…";
  const res=await Promise.all(CFG.symbols.map(async sym=>{try{return{sym,k:await klines(sym)}}catch(e){return{sym,err:e.message}}}));
- let html="";
+ let html="",mini=[];
  for(const r of res){
   if(r.err){html+=`<div class="card warn"><b>${r.sym}</b><br>${r.err}</div>`;continue}
-  const[score,it,veto]=avaliar(r.k),L={score,it,veto},ver=revisor(r.k,score,veto);
+  const[score,it,veto]=avaliar(r.k),ver=revisor(r.k,score,veto);
   LASTA[r.sym]={px:last(r.k).c,score,it,veto,ver,p:(!veto&&score>=60)?plano(r.k):null};
-  const cor=ver[0]=="ok"?"var(--ok)":ver[0]=="warn"?"var(--acc)":"var(--bad)";
-  const verHtml=`<div class="ver" style="border-color:${cor};color:${cor}"><b>${ver[1]}</b><br><span style="color:var(--mut)">${ver[2]}</span></div>`;
-  let body="";
-  if(!veto&&score>=CFG.scoreMin){const pl=plano(r.k);
-   if(pl){body=`<div class="sig"><b>COMPRAR — score ${score}/100</b>
-    <table><tr><td>Entrada (próx. abertura)</td><td>${fmt(pl.e)}</td></tr><tr><td>Stop (2×ATR)</td><td>${fmt(pl.stop)} (${pl.pct.toFixed(1)}%)</td></tr>
-    <tr><td>TP1 (vender metade)</td><td>${fmt(pl.tp1)}</td></tr><tr><td>TP2</td><td>${fmt(pl.tp2)}</td></tr></table>
-    <div class="mut" style="margin-top:6px">Candle diário fechado. Confirme manualmente. Após TP1, mova o stop para a entrada.</div></div>`;
-    addHist(r.sym,score,pl)}else body=`<div class="mut" style="margin-top:8px">Score ok, mas o stop não passou nos filtros de risco.</div>`}
-  else{const f=it.filter(i=>i[1]<i[2]).map(i=>`${i[0]} (${i[1]}/${i[2]})`);
-   if(!veto&&score>=60)addObs(r.sym,score,last(r.k).c);
-   body=`<div class="mut" style="margin-top:8px">${score>=60&&!veto?`Quase sinal (${score}/${CFG.scoreMin}) — registrado em Observação. `:""}Sem entrada — aguardar. Falta: ${f.join(", ")||"veto da EMA200"}</div>`}
-  html+=`<div class="card"><div style="display:flex;justify-content:space-between"><h2>${r.sym.slice(0,-4)}/${r.sym.slice(-4)}</h2><span>${fmt(last(r.k).c)}</span></div>
-  <div class="mut" style="font-size:12px">Candle diário fechado em ${new Date(last(r.k).t+864e5).toLocaleDateString("pt-BR")}</div>
-  ${compraHtml(L)}${verHtml}${body}
-  <div class="row"><button class="s" onclick="copiaAgente('${r.sym}')">Revisão profunda (abre o Claude)</button></div></div>`}
+  const nome=r.sym.slice(0,-4),cor=ver[0]=="ok"?"var(--ok)":ver[0]=="warn"?"var(--acc)":"var(--bad)";
+  mini.push({nome,score,ver,cor});
+  const destaque=ver[0]!="no";
+  if(destaque||score>=CFG.scoreMin){
+   const verHtml=`<div class="ver" style="border-color:${cor};color:${cor}"><b>${ver[1]}</b><br><span style="color:var(--mut)">${ver[2]}</span></div>`;
+   let body="";
+   if(!veto&&score>=CFG.scoreMin){const pl=plano(r.k);
+    if(pl){body=`<div class="sig"><b>COMPRAR — score ${score}/100</b>
+     <table><tr><td>Entrada</td><td>${fmt(pl.e)}</td></tr><tr><td>Stop (2×ATR)</td><td>${fmt(pl.stop)} (${pl.pct.toFixed(1)}%)</td></tr>
+     <tr><td>TP1 (vender metade)</td><td>${fmt(pl.tp1)}</td></tr><tr><td>TP2</td><td>${fmt(pl.tp2)}</td></tr></table>
+     <div class="mut" style="margin-top:6px">Confirme manualmente. Após TP1, stop na entrada.</div></div>`;addHist(r.sym,score,pl)}}
+   else if(score>=60&&!veto)addObs(r.sym,score,last(r.k).c);
+   html+=`<div class="card"><div style="display:flex;justify-content:space-between"><h2>${nome}/USDT</h2><span>${fmt(last(r.k).c)}</span></div>
+   <div class="sc"><b>Compra</b><div class="bar"><i class="${score>=CFG.scoreMin&&!veto?"hi":""}" style="width:${score}%"></i></div><span class="num">${score}</span></div>
+   <details><summary>Critérios</summary><ul>${it.map(i=>`<li>${i[0]}: <b>${i[1]}/${i[2]}</b> — ${i[3]}</li>`).join("")}</ul></details>
+   ${verHtml}${body}
+   <div class="row"><button class="s" onclick="copiaAgente('${r.sym}')">Revisão profunda (Claude)</button></div></div>`}
+  else if(score>=60&&!veto)addObs(r.sym,score,last(r.k).c)}
+ $("resumo").innerHTML=`<h2>Visão geral — 8 ativos</h2>`+mini.map(m=>`<div class="mini"><b>${m.nome}</b><span style="color:${m.cor}">${m.ver[1]}</span><span class="num">${m.score}</span></div>`).join("")+`<div class="mut" style="margin-top:8px">Cards detalhados aparecem só para 🟡/🟢. 🔴 fica resumido aqui.</div>`;
  $("out").innerHTML=html;renderHist();
  $("upd").textContent="Atualizado às "+new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
  busy=false;$("go").disabled=false}
 
 function addHist(sym,score,p){const h=ls.get("aq3_hist",[]);const dup=h.find(x=>x.sym==sym&&Date.now()-x.t<72e6);if(dup)return;
- h.unshift({t:Date.now(),sym,score,e:p.e,stop:p.stop,tp1:p.tp1,tp2:p.tp2});ls.set("aq3_hist",h.slice(0,30))}
+ h.unshift({t:Date.now(),sym,score,e:p.e,stop:p.stop,tp1:p.tp1,tp2:p.tp2});ls.set("aq3_hist",h.slice(0,50));renderHist()}
 function addObs(sym,score,px){const o=ls.get("aq3_obs",[]);const dup=o.find(x=>x.sym==sym&&Date.now()-x.t<72e6);if(dup)return;
- o.unshift({t:Date.now(),sym,score,px});ls.set("aq3_obs",o.slice(0,30))}
+ o.unshift({t:Date.now(),sym,score,px});ls.set("aq3_obs",o.slice(0,50));renderHist()}
 function renderHist(){const h=ls.get("aq3_hist",[]),o=ls.get("aq3_obs",[]);
- $("hist").innerHTML=`<h2>Histórico de sinais</h2>`+(h.length?h.slice(0,10).map(x=>`<div style="margin-top:8px;font-size:13px"><b>${x.sym.slice(0,-4)} COMPRA</b> ${x.score}/100 — ${new Date(x.t).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}<br><span class="mut">Entrada ${fmt(x.e)} | Stop ${fmt(x.stop)} | TP1 ${fmt(x.tp1)} | TP2 ${fmt(x.tp2)}</span></div>`).join(""):`<div class="mut" style="margin-top:6px">Nenhum sinal ainda. No diário, semanas em silêncio são normais.</div>`)
- +`<h2 style="margin-top:14px">Observação — não operar</h2>`+(o.length?o.slice(0,10).map(x=>`<div class="obs"><b>${x.sym.slice(0,-4)}</b> nota ${x.score} — ${new Date(x.t).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit"})} · preço ${fmt(x.px)}</div>`).join(""):`<div class="mut" style="margin-top:6px">Nada registrado.</div>`)}
+ $("hist").innerHTML=`<h2>Histórico de sinais</h2>`+(h.length?h.slice(0,12).map(x=>`<div style="margin-top:8px;font-size:13px"><b>${x.sym.slice(0,-4)} COMPRA</b> ${x.score}/100 — ${new Date(x.t).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}<br><span class="mut">Entrada ${fmt(x.e)} | Stop ${fmt(x.stop)} | TP1 ${fmt(x.tp1)} | TP2 ${fmt(x.tp2)}</span></div>`).join(""):`<div class="mut" style="margin-top:6px">Nenhum sinal ainda.</div>`)
+ +`<h2 style="margin-top:14px">Observação — não operar</h2>`+(o.length?o.slice(0,12).map(x=>`<div class="obs"><b>${x.sym.slice(0,-4)}</b> nota ${x.score} — ${new Date(x.t).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit"})} · ${fmt(x.px)}</div>`).join(""):`<div class="mut" style="margin-top:6px">Nada registrado.</div>`)}
 
-function renderCfg(){$("cfg").innerHTML=`<h2>Ajustes</h2><div class="row"><label class="mut">Nota mínima</label><select id="smin" onchange="setCfg()">${[70,75,80,85,90].map(v=>`<option${v==CFG.scoreMin?" selected":""}>${v}</option>`).join("")}</select></div><p class="mut" style="margin:6px 0 0">Análise no fechamento do candle diário (21:00 de Brasília). Confira 1x por dia após esse horário.</p>`}
+function renderCfg(){$("cfg").innerHTML=`<h2>Ajustes</h2><div class="row"><label class="mut">Nota mínima</label><select id="smin" onchange="setCfg()">${[70,75,80,85,90].map(v=>`<option${v==CFG.scoreMin?" selected":""}>${v}</option>`).join("")}</select></div><p class="mut" style="margin:6px 0 0">Fechamento diário às 21:00 de Brasília. Confira 1x por dia.</p>`}
 function setCfg(){CFG.scoreMin=+$("smin").value;ls.set("aq3_min",CFG.scoreMin);scan()}
 
-function renderBt(){$("bt").innerHTML=`<h2>Backtest</h2><p class="mut" style="margin:6px 0 10px">Regras V3 (rompimento 20 dias, diário, só compra) em ~2,7 anos de histórico.</p><div class="row"><button id="btgo" onclick="backtest(0)">Rodar backtest</button><button id="btcmp" class="s" onclick="backtest(1)">Comparar notas</button></div><div id="btm" class="mut" style="margin-top:8px"></div><div id="btr">${ls.get("aq3_bt","")}</div>`}
+function renderBt(){$("bt").innerHTML=`<h2>Backtest — 8 ativos</h2><p class="mut" style="margin:6px 0 10px">Mesma regra V3 em ~2,7 anos, agora nos 8 ativos. Demora um pouco mais (baixa 8 históricos).</p><div class="row"><button id="btgo" onclick="backtest(0)">Rodar backtest</button><button id="btcmp" class="s" onclick="backtest(1)">Comparar notas</button></div><div id="btm" class="mut" style="margin-top:8px"></div><div id="btr">${ls.get("aq3m_bt","")}</div>`}
 async function histD(sym){let raw=null;
  for(const h of HOSTS){try{const r=await fetch(`${h}/api/v3/klines?symbol=${sym}&interval=1d&limit=1000`);if(!r.ok)throw 0;raw=await r.json();break}catch(e){}}
  if(!raw)throw new Error(`Falha no histórico de ${sym}`);
@@ -165,17 +163,17 @@ function simula(k,i,p){let est=0;
   else{if(c.l<=p.e)return{r:0.75,j};if(c.h>=p.tp2)return{r:2.25,j}}}
  const jj=Math.min(k.length-1,i+90),x=(k[jj].c-p.e)/(p.e-p.stop);return{r:est?0.75+0.5*x:x,j:jj}}
 let BTD=null;
-async function btLoad(msg){if(BTD)return BTD;const B={};
- for(const sym of CFG.symbols){msg(`Baixando histórico de ${sym}…`);
-  const k=await histD(sym),cand=[];
+async function btLoad(msg){if(BTD)return BTD;const B={ok:[]};
+ for(const sym of CFG.symbols){try{msg(`Baixando ${sym}…`);
+  const k=await histD(sym);if(k.length<260)throw 0;const cand=[];
   for(let i=220;i<k.length-1;i++){
-   if(i%100==0){msg(`${sym}: ${Math.round(i/k.length*100)}%`);await new Promise(r=>setTimeout(r))}
+   if(i%150==0){msg(`${sym}: ${Math.round(i/k.length*100)}%`);await new Promise(r=>setTimeout(r))}
    const win=k.slice(Math.max(0,i-499),i+1),[score,it,veto]=avaliar(win);
    if(score>=60&&!veto)cand.push({i,score,p:plano(win)})}
-  B[sym]={k,cand}}
- B.ini=B[CFG.symbols[0]].k[220].t;B.fim=last(B[CFG.symbols[0]].k).t;BTD=B;return B}
+  B[sym]={k,cand};B.ok.push(sym)}catch(e){}}
+ const ref=B[B.ok[0]].k;B.ini=ref[220].t;B.fim=last(ref).t;BTD=B;return B}
 function btRun(thr){const T=[];
- for(const sym of CFG.symbols){const{k,cand}=BTD[sym];let livre=0;
+ for(const sym of BTD.ok){const{k,cand}=BTD[sym];let livre=0;
   for(const c of cand){if(c.i<livre||c.score<thr||!c.p)continue;
    const res=simula(k,c.i,c.p);
    T.push({sym,t:k[c.i].t,score:c.score,r:res.r,net:res.r-0.002/(c.p.pct/100)});livre=res.j+1}}
@@ -184,20 +182,22 @@ async function backtest(cmp){const b1=$("btgo"),b2=$("btcmp"),msg=t=>{$("btm").t
  try{const B=await btLoad(msg);
   const calc=a=>{let eq=0,pk=0,dd=0;for(const x of a){eq+=x.net;pk=Math.max(pk,eq);dd=Math.max(dd,pk-eq)}return{n:a.length,w:a.filter(x=>x.net>0).length,sum:eq,dd}};
   const fR=v=>(v>=0?"+":"")+v.toFixed(1)+"R",dt=t=>new Date(t).toLocaleDateString("pt-BR"),pc=x=>x.n?Math.round(x.w/x.n*100)+"%":"–";
-  const per=`Período: ${dt(B.ini)} a ${dt(B.fim)} (~2,7 anos). Só compra. Taxa 0,1% por lado. 1R = valor arriscado.`;
+  const per=`Período: ${dt(B.ini)} a ${dt(B.fim)}. ${B.ok.length} ativos. Só compra. Taxa 0,1%/lado. 1R = valor arriscado.`;
   let h;
-  if(cmp){h=`<div class="mut" style="margin-top:8px">${per}</div><table class="t"><tr><th>Nota mín.</th><th>Sinais</th><th>Acertos</th><th>Resultado</th></tr>`+[60,70,75,80,85,90].map(v=>{const x=calc(btRun(v));return `<tr><td>${v}</td><td>${x.n}</td><td>${pc(x)}</td><td>${fR(x.sum)}</td></tr>`}).join("")+`</table><p class="mut" style="margin-top:8px">Procure COERÊNCIA entre as notas, não um pico isolado.</p>`}
-  else{const T=btRun(CFG.scoreMin),rows=[...CFG.symbols.map(y=>[y.slice(0,-4),calc(T.filter(x=>x.sym==y))]),["Total",calc(T)]];
+  if(cmp){h=`<div class="mut" style="margin-top:8px">${per}</div><table class="t"><tr><th>Nota mín.</th><th>Sinais</th><th>Acertos</th><th>Resultado</th></tr>`+[60,70,75,80,85,90].map(v=>{const x=calc(btRun(v));return `<tr><td>${v}</td><td>${x.n}</td><td>${pc(x)}</td><td>${fR(x.sum)}</td></tr>`}).join("")+`</table><p class="mut" style="margin-top:8px">Procure coerência entre as notas e compare com o resultado de 2 ativos (+3,3R na nota 70).</p>`}
+  else{const T=btRun(CFG.scoreMin),rows=[...B.ok.map(y=>[y.slice(0,-4),calc(T.filter(x=>x.sym==y))]),["Total",calc(T)]];
    h=`<div class="mut" style="margin-top:8px">${per} Nota mínima: ${CFG.scoreMin}.</div><table class="t"><tr><th></th><th>Sinais</th><th>Acertos</th><th>Resultado</th><th>Queda máx.</th></tr>${rows.map(([n,x])=>`<tr><td>${n}</td><td>${x.n}</td><td>${pc(x)}</td><td>${fR(x.sum)}</td><td>-${x.dd.toFixed(1)}R</td></tr>`).join("")}</table>`;
-   h+=T.length?`<div class="mut" style="margin-top:8px">Últimas operações:</div>`+T.slice(-8).reverse().map(x=>`<div style="font-size:13px;margin-top:4px">${dt(x.t)} ${x.sym.slice(0,-4)} compra (${x.score}) → <b style="color:${x.net>0?"var(--ok)":"var(--bad)"}">${fR(x.net)}</b></div>`).join(""):`<p class="mut">Nenhum sinal no período.</p>`}
-  $("btr").innerHTML=h;ls.set("aq3_bt",h);msg("Concluído.")}
+   h+=T.length?`<div class="mut" style="margin-top:8px">Últimas operações:</div>`+T.slice(-10).reverse().map(x=>`<div style="font-size:13px;margin-top:4px">${dt(x.t)} ${x.sym.slice(0,-4)} compra (${x.score}) → <b style="color:${x.net>0?"var(--ok)":"var(--bad)"}">${fR(x.net)}</b></div>`).join(""):`<p class="mut">Nenhum sinal no período.</p>`}
+  $("btr").innerHTML=h;ls.set("aq3m_bt",h);msg("Concluído.")}
  catch(e){msg("Erro: "+e.message)}
  b1.disabled=b2.disabled=false}
 
-function tvInit(){const s=document.createElement("script");s.src="https://s3.tradingview.com/tv.js";
- s.onload=()=>{new TradingView.widget({container_id:"tv_btc",symbol:"BINANCE:BTCUSDT",interval:"D",theme:"dark",style:"1",locale:"br",autosize:true});
- new TradingView.widget({container_id:"tv_eth",symbol:"BINANCE:ETHUSDT",interval:"D",theme:"dark",style:"1",locale:"br",autosize:true})};
- document.head.appendChild(s)}
+let tvReady=false;
+function tvShow(){const sym=$("tvsym").value;$("tvbox").innerHTML="";
+ if(tvReady)new TradingView.widget({container_id:"tvbox",symbol:"BINANCE:"+sym,interval:"D",theme:"dark",style:"1",locale:"br",autosize:true})}
+function tvInit(){$("tvsym").innerHTML=CFG.symbols.map(s=>`<option value="${s}">${s.slice(0,-4)}/USDT</option>`).join("");
+ const s=document.createElement("script");s.src="https://s3.tradingview.com/tv.js";
+ s.onload=()=>{tvReady=true;tvShow()};document.head.appendChild(s)}
 
 $("go").onclick=scan;renderCfg();renderBt();renderHist();scan();tvInit();
 </script></body></html>
