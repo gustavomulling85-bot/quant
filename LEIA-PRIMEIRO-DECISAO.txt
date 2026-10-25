@@ -1,0 +1,14 @@
+QUANT V3 — VALIDAÇÃO EXTERNA, VERSÃO CONSERVADORA
+
+1. Arquivo quant-decisao.js: enviar para a raiz do repositório gustavomulling85-bot/quant.
+2. No arquivo v3.html, antes de </body> (e DEPOIS de <script src="quant-intelligence.js" defer></script>), adicionar:
+   <script src="quant-decisao.js" defer></script>
+3. Commit na branch main; conferir deploy Render e testar sem operar.
+
+LIMITAÇÕES IMPORTANTES
+- Este complemento NÃO faz agendamento no servidor com o navegador fechado.
+- O código de sinais atual registra históricos antes da consulta TinyFish.
+- Este complemento é uma etapa de diagnóstico e REVISÃO MANUAL, não deve ser considerado o filtro final de decisão automática.
+- Fontes antigas, sem data e notícias genéricas não são suficientes para liberar uma compra.
+- Para implementar filtro vinculante e verificação automática diária de verdade, refatorar server.js e fluxo de registro de sinais com testes e controle de acesso.
+- Não compartilhar QUANT_ACCESS_PIN nem TINYFISH_API_KEY; manter execução de ordens desabilitada.
