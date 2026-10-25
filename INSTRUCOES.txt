@@ -1,0 +1,1 @@
+Enviar APENAS intraday.html para a raiz do repositorio gustavomulling85-bot/quant no GitHub. Nao substituir server.js, v3.html nem quant-paper-bot.js. Abrir https://agente-quant-v3.onrender.com/intraday.html apos deploy. Apenas observacao, nenhuma ordem real ou virtual. O PIN nao e salvo.
