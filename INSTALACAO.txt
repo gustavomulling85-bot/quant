@@ -1,0 +1,23 @@
+QUANT - ROBÔ AUTOMÁTICO DE SIMULAÇÃO, VERSÃO EXPERIMENTAL
+
+ARQUIVOS DO PACOTE:
+1. server.js          SUBSTITUIR o server.js original (mantém rotas antigas)
+2. quant-auto-bot.js  ADICIONAR na raiz do mesmo repositório
+3. quant-auto-ui.js   ADICIONAR na raiz do mesmo repositório
+
+NO QUANT-UNIFICADO.HTML, NO FINAL, ANTES DE </body> COLE:
+<script src="quant-auto-ui.js" defer></script>
+
+O SCRIPT cria o cartão "Robô automático" dentro do Painel Único.
+Depois do deploy, abra quant-unificado.html, preencha o PIN existente na seção TinyFish, clique no menu "Robô virtual", carregue o status, configure seus parâmetros e ative.
+
+ESTA VERSÃO É PAPER-TRADING. SEM ORDENS REAIS.
+A rotina roda no servidor a cada minuto. Entrada só em fechamento de velas 15m, a partir do horário configurado em America/Sao_Paulo. Entradas dependem de sinal técnico + triagem TinyFish. Se fonte ausente ou alerta de risco, não entra. Stops/metas virtuais são aproximados em candles de 15m e NÃO equivalem a execução de mercado real. Se o servidor dormir ou ficar indisponível, NÃO MONITORA.
+
+ATENÇÃO SOBRE ARMAZENAMENTO: o estado é gravado em quant-auto-state.json NO DISCO TEMPORÁRIO DO RENDER. Pode se perder após um novo deploy ou reinício. O motor sempre volta DESLIGADO ao reiniciar por segurança. Não use como histórico definitivo até migrar para Supabase/Postgres.
+
+Configurações de partida: capital 1000 USDT (simulado), 100 por entrada, 5 USDT de meta diária, 10 USDT de perda máxima, até 3 entradas/dia, início 09:00, alvo por entrada +2,5%, stop -1% e taxa 0,1% de cada lado. Meta é objetivo de PARADA, não lucro garantido.
+
+O motor só opera virtualmente quando ATIVADO explicitamente com o botão do painel. Não ligue funções de compras reais; nenhuma chave Binance é necessária.
+
+Status de implantação: NÃO PUBLICADO pelo assistente. GitHub recusou acesso de escrita (403). Requer substituição/upload manual e teste no Render.
