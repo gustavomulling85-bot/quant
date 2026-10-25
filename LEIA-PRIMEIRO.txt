@@ -1,27 +1,21 @@
-AGENTE QUANT V3 — ARQUIVOS ADICIONAIS PARA O RENDER
+QUANT V3 — INTEGRAÇÃO DE INTELIGÊNCIA TINYFISH
+Repositório EXCLUSIVO: gustavomulling85-bot/quant
 
-ADICIONE ESTES 4 ARQUIVOS NA RAIZ DO REPOSITÓRIO CORRETO:
-  package.json
-  server.js
-  tinyfish.html
-  tinyfish.js
+STATUS: pacote preparado e validado sintaticamente. Não foi enviado ao GitHub: o conector retornou erro 403 de permissão de gravação.
 
-NÃO substitua index.html, v3.html, lab.html, painel.js, sw.js ou manifest.json.
+1. No GitHub, abra SOMENTE o repositório gustavomulling85-bot/quant, branch main.
+2. Escolha Add file > Upload files e envie quant-intelligence.js para a RAIZ do repositório.
+3. Confirme (Commit changes).
+4. Abra o arquivo v3.html do MESMO repositório e toque em Edit (lápis).
+5. No final do arquivo, imediatamente ANTES de </body>, insira a linha:
+   <script src="/quant-intelligence.js" defer></script>
+6. Salve o commit e aguarde o redeploy automático do serviço agente-quant-v3 do Render.
+7. Abra https://agente-quant-v3.onrender.com/v3.html
+8. O painel "Inteligência de mercado — TinyFish" estará abaixo da Visão geral.
+9. Use o PIN definido no Render na variável QUANT_ACCESS_PIN. O PIN não é a chave de API do TinyFish.
 
-Render: Node, branch que contém esses arquivos, Root Directory em branco,
-Build Command: npm install
-Start Command: npm start
-Plano: $0/mês para testes (fica inativo após ociosidade).
-Variáveis: TINYFISH_API_KEY e QUANT_ACCESS_PIN.
+REQUISITOS: o serviço Render deve conter TINYFISH_API_KEY e QUANT_ACCESS_PIN; o servidor existente server.js já implementa /api/tinyfish/context.
 
-Depois de publicar, visite /api/health e /tinyfish.html no endereço Render.
-A tela nova é separada da V3 e não interfere no motor de sinais. Futuramente
-poderemos adicionar apenas um link para ela na V3.
+SEGURANÇA: a API key deve ficar APENAS em variáveis de ambiente no servidor, nunca em HTML/JS público. O campo PIN é apagado ao término da pesquisa. Não compartilhe prints com chaves expostas.
 
-IMPORTANTE: Seu print do GitHub exibe o nome 'quantitativo' enquanto o Render
-está associado a 'quant'. Confira a URL real e a branch antes de adicionar.
-Não envie nenhuma chave em prints ou no GitHub. Rotacione a chave que
-apareceu anteriormente no chat.
-
-Segurança: esse PIN é proteção simples para testes, NÃO autenticação robusta.
-Não recomendo uso público sem login, rate-limit persistente e auditoria.
+ESCOPO: apenas contexto de notícias e fontes. Não executa ordens, não altera o algoritmo, não promete aumento de acerto e não modifica outros repositórios. A pesquisa é manual para controlar custos e reduzir falsos alarmes. A revisão quantitativa do backtest precisa ser feita separadamente e validada fora da amostra antes de mudar sinais.
