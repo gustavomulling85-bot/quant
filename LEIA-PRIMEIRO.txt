@@ -1,34 +1,10 @@
-QUANT V3 — LABORATÓRIO DE SIMULAÇÃO (versão de avaliação)
+QUANT V4 — LABORATÓRIO INTRADIÁRIO VIRTUAL
 
-ARQUIVOS QUE DEVEM SER ENVIADOS À RAIZ DO REPOSITÓRIO gustavomulling85-bot/quant
-- server.js (SUBSTITUI o arquivo existente; mantém a rota TinyFish e a hospedagem do V3)
-- quant-paper-bot.js (SUBSTITUI o protótipo anterior)
-- paper.html (NOVO)
-- paper-ui.js (NOVO)
+1. Envie APENAS v4-laboratorio.html à RAIZ do repositório gustavomulling85-bot/quant pelo GitHub.
+2. NÃO substitua server.js, paper.html, v3.html ou outro arquivo.
+3. Abra https://agente-quant-v3.onrender.com/v4-laboratorio.html
+4. Clique Analisar oito ativos. Somente se houver CANDIDATO aparecerá o botão de pesquisa TinyFish.
+5. Se quiser simular uma entrada, informe o PIN e consulte TinyFish antes de confirmar.
+6. Consulte frequentemente Atualizar preços e carteira. Não há execução ou monitoramento com a aba fechada.
 
-NÃO SUBSTITUA v3.html, quant-intelligence.js, quant-decisao.js ou index.html.
-
-PASSO A PASSO PELO GITHUB
-1. Extraia este ZIP. É necessário enviar os quatro arquivos extraídos, não o ZIP.
-2. No repositório quant, use Add file > Upload files.
-3. Selecione os quatro arquivos e verifique se os nomes estão EXATAMENTE iguais.
-4. Confirme as alterações. O GitHub perguntará sobre substituição de server.js e quant-paper-bot.js.
-5. Se o Render usa auto deploy, consulte o status e abra https://agente-quant-v3.onrender.com/paper.html.
-6. Informe seu PIN do Quant e clique Atualizar carteira. Em seguida execute Analisar candidatos + TinyFish.
-7. Se uma moeda aparecer como REVISAR, a eventual compra é SOMENTE VIRTUAL e requer um clique explícito.
-
-SEGURANÇA
-- NÃO envie PIN ou chave da API ao GitHub nem nesta conversa.
-- Nenhuma chave de negociação, autenticação Binance ou ordem real existe neste pacote.
-- O PIN não é salvo em armazenamento persistente no navegador; permanece somente no campo até a aba fechar.
-- O TinyFish NÃO classifica notícias como sinal positivo e não autoriza operação.
-- Nunca trate a meta diária como promessa de lucro.
-
-LIMITAÇÕES IMPORTANTES
-- O filtro técnico ainda é DIÁRIO, não intradiário; não haverá necessariamente operações todos os dias.
-- Stop e alvo são verificações virtuais aproximadas de candles: não equivalem a execução de ordens.
-- Este módulo NÃO está agendado 24/7 e exige que a simulação seja consultada; fechamento e preços não são monitorados continuamente.
-- O estado é gravado em arquivo local. Em muitos serviços Render sem disco persistente, deploy/restart apagará a carteira. Não usar como registro confiável até adicionar banco persistente.
-- A avaliação do TinyFish é somente contextual. Uma notícia antiga ou inconclusiva não valida uma compra.
-- A simulação ainda não foi calibrada para operação real ou backtest intradiário.
-- A versão preparada não foi publicada no Render; testes realizados localmente: sintaxe do Node, rota health, PIN negado sem credencial e status de carteira virtual retornando.
+A carteira usa localStorage do navegador; não compartilha saldo com paper.html e pode ser apagada com a limpeza dos dados do site. A modelagem de candle não reproduz o spread/slippage e pode perder toques de stop entre verificações. Este protótipo não faz backtest nem prova rentabilidade. NÃO use dinheiro real.
