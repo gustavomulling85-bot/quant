@@ -1,0 +1,16 @@
+AGENTE QUANT - MOTOR UNIFICADO (SOMENTE SIMULACAO)
+
+1) Envie quant-unified-bot.js e quant-unified-ui.js para a raiz do GitHub.
+2) Em server.js, depois de const SCALP = require('./quant-scalp-bot'); acrescente:
+const UNIFIED = require('./quant-unified-bot');
+3) Depois de if (await SCALP.handle(req, res, u)) return; acrescente:
+if (await UNIFIED.handle(req, res, u)) return;
+4) No final, depois de SCALP.start(); acrescente:
+UNIFIED.start();
+5) Na lista de arquivos privados de server.js, BLOQUEIE tambem quant-unified-bot.js e quant-unified-state.json e quant-unified-state.json.tmp.
+6) Em quant-unificado.html, antes de </body>, adicione:
+<script src="quant-unified-ui.js" defer></script>
+7) Confirme deploy no Render; desligue robos antigos (5m e scalping) antes de ativar o executor unico.
+8) Informe PIN no TinyFish; atualize e habilite somente para simulacao.
+
+ATENCAO: arquivo no Render nao e persistente, reinicios podem apagar a carteira; nao use para negociar com dinheiro real. Motor experimental, nao passou por backtest independente.
