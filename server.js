@@ -8,9 +8,11 @@ const crypto = require('node:crypto');
 
 const ROOT = __dirname;
 
+// MOTORES EXISTENTES E MOTOR UNIFICADO
 const PAPER = require('./quant-paper-bot');
 const AUTO = require('./quant-auto-bot');
 const SCALP = require('./quant-scalp-bot');
+const UNIFIED = require('./quant-unified-bot');
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -31,6 +33,9 @@ const TYPES = {
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon'
 };
@@ -61,6 +66,26 @@ function pinValid(candidate) {
   );
 }
 
+async function readBody(req, maxLength = 2048) {
+  let requestBody = '';
+
+  for await (const chunk of req) {
+    requestBody += chunk;
+
+    if (requestBody.length > maxLength) {
+      throw Error('Requisição extensa demais.');
+    }
+  }
+
+  try {
+    return requestBody
+      ? JSON.parse(requestBody)
+      : {};
+  } catch {
+    throw Error('JSON inválido.');
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const u = new URL(
@@ -68,35 +93,63 @@ const server = http.createServer(async (req, res) => {
       `http://${req.headers.host || 'localhost'}`
     );
 
+    // ======================================
+    // ROTAS DOS MOTORES DE SIMULACAO
+    // ======================================
+
     // Robô automático de 5 minutos
-    if (await AUTO.handle(req, res, u)) return;
+    if (await AUTO.handle(req, res, u)) {
+      return;
+    }
 
     // Scalping virtual de 1 minuto
-    if (await SCALP.handle(req, res, u)) return;
+    if (await SCALP.handle(req, res, u)) {
+      return;
+    }
 
-    // Verificação de funcionamento
+    // NOVO MOTOR UNIFICADO
+    if (await UNIFIED.handle(req, res, u)) {
+      return;
+    }
+
+    // ======================================
+    // VERIFICACAO DO SERVIDOR
+    // ======================================
+
     if (
       u.pathname === '/api/health' &&
       req.method === 'GET'
     ) {
       return json(res, 200, {
         status: 'ok',
-        service: 'agente-quant-v3'
+        service: 'agente-quant-v3',
+        unifiedModule: true,
+        realOrders: false
       });
     }
 
-    // Status TinyFish
+    // ======================================
+    // STATUS TINYFISH
+    // ======================================
+
     if (
       u.pathname === '/api/tinyfish/status' &&
       req.method === 'GET'
     ) {
       return json(res, 200, {
-        configured: Boolean(process.env.TINYFISH_API_KEY),
-        pinConfigured: Boolean(process.env.QUANT_ACCESS_PIN)
+        configured: Boolean(
+          process.env.TINYFISH_API_KEY
+        ),
+        pinConfigured: Boolean(
+          process.env.QUANT_ACCESS_PIN
+        )
       });
     }
 
-    // Consulta contextual TinyFish
+    // ======================================
+    // CONSULTA CONTEXTUAL TINYFISH
+    // ======================================
+
     if (
       u.pathname === '/api/tinyfish/context' &&
       req.method === 'POST'
@@ -116,27 +169,17 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      let requestBody = '';
-
-      for await (const chunk of req) {
-        requestBody += chunk;
-
-        if (requestBody.length > 2048) {
-          return json(res, 413, {
-            error: 'Requisição extensa demais.'
-          });
-        }
-      }
-
-      let symbol;
+      let data;
 
       try {
-        symbol = JSON.parse(requestBody).symbol;
-      } catch {
+        data = await readBody(req, 2048);
+      } catch (error) {
         return json(res, 400, {
-          error: 'JSON inválido.'
+          error: error.message
         });
       }
+
+      const symbol = data.symbol;
 
       if (!SYMBOLS.has(symbol)) {
         return json(res, 400, {
@@ -147,7 +190,10 @@ const server = http.createServer(async (req, res) => {
       const now = Date.now();
       const cached = CACHE.get(symbol);
 
-      if (cached && now - cached.at < 15 * 60 * 1000) {
+      if (
+        cached &&
+        now - cached.at < 15 * 60 * 1000
+      ) {
         return json(res, 200, {
           ...cached.result,
           cached: true
@@ -184,7 +230,8 @@ const server = http.createServer(async (req, res) => {
           }),
           {
             headers: {
-              'X-API-Key': process.env.TINYFISH_API_KEY,
+              'X-API-Key':
+                process.env.TINYFISH_API_KEY,
               Accept: 'application/json'
             },
             signal: controller.signal
@@ -193,29 +240,36 @@ const server = http.createServer(async (req, res) => {
 
         if (!response.ok) {
           return json(res, 502, {
-            error: `TinyFish retornou HTTP ${response.status}.`
+            error:
+              'TinyFish retornou HTTP ' +
+              response.status
           });
         }
 
-        const data = await response.json();
+        const resultData = await response.json();
 
-        const records = Array.isArray(data.results)
-          ? data.results
+        const records = Array.isArray(resultData.results)
+          ? resultData.results
           : [];
 
         const result = {
           symbol,
           consultedAt: new Date().toISOString(),
-          results: records.slice(0, 10).map(x => ({
-            title: String(x.title || ''),
-            snippet: String(x.snippet || ''),
-            url:
-              typeof x.url === 'string' &&
-              /^https?:\/\//.test(x.url)
-                ? x.url
-                : null,
-            date: x.date || null
-          }))
+
+          results: records
+            .slice(0, 10)
+            .map(x => ({
+              title: String(x.title || ''),
+              snippet: String(x.snippet || ''),
+
+              url:
+                typeof x.url === 'string' &&
+                /^https?:\/\//.test(x.url)
+                  ? x.url
+                  : null,
+
+              date: x.date || null
+            }))
         };
 
         CACHE.set(symbol, {
@@ -238,7 +292,10 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // API de simulação já existente
+    // ======================================
+    // API ORIGINAL DE OPERACOES FICTICIAS
+    // ======================================
+
     if (u.pathname.startsWith('/api/paper/')) {
       if (!pinValid(req.headers['x-quant-pin'])) {
         return json(res, 401, {
@@ -250,7 +307,11 @@ const server = http.createServer(async (req, res) => {
         u.pathname === '/api/paper/status' &&
         req.method === 'GET'
       ) {
-        return json(res, 200, await PAPER.refresh());
+        return json(
+          res,
+          200,
+          await PAPER.refresh()
+        );
       }
 
       if (req.method !== 'POST') {
@@ -259,34 +320,26 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      let requestBody = '';
-
-      for await (const chunk of req) {
-        requestBody += chunk;
-
-        if (requestBody.length > 1024) {
-          return json(res, 413, {
-            error: 'Requisição extensa.'
-          });
-        }
-      }
-
-      let body = {};
+      let data;
 
       try {
-        body = requestBody
-          ? JSON.parse(requestBody)
-          : {};
-      } catch {
+        data = await readBody(req, 1024);
+      } catch (error) {
         return json(res, 400, {
-          error: 'JSON inválido.'
+          error: error.message
         });
       }
 
+      // Pausar simulador anterior
       if (u.pathname === '/api/paper/pause') {
-        return json(res, 200, PAPER.pause(body.paused));
+        return json(
+          res,
+          200,
+          PAPER.pause(data.paused)
+        );
       }
 
+      // Radar original
       if (u.pathname === '/api/paper/scan') {
         const context = async sym => {
           if (!process.env.TINYFISH_API_KEY) {
@@ -314,7 +367,8 @@ const server = http.createServer(async (req, res) => {
               }),
               {
                 headers: {
-                  'X-API-Key': process.env.TINYFISH_API_KEY,
+                  'X-API-Key':
+                    process.env.TINYFISH_API_KEY,
                   Accept: 'application/json'
                 },
                 signal: ctrl.signal
@@ -322,7 +376,7 @@ const server = http.createServer(async (req, res) => {
             );
 
             if (!response.ok) {
-              throw new Error('TinyFish indisponível');
+              throw Error('TinyFish indisponível');
             }
 
             const raw = await response.json();
@@ -333,7 +387,9 @@ const server = http.createServer(async (req, res) => {
                 ? raw.results
                 : []
             ).filter(x => {
-              const date = Date.parse(x.date || '');
+              const date = Date.parse(
+                x.date || ''
+              );
 
               return (
                 Number.isFinite(date) &&
@@ -351,7 +407,8 @@ const server = http.createServer(async (req, res) => {
           } catch {
             return {
               status: 'INCONCLUSIVO',
-              reason: 'TinyFish sem contexto verificável'
+              reason:
+                'TinyFish sem contexto verificável'
             };
 
           } finally {
@@ -366,8 +423,9 @@ const server = http.createServer(async (req, res) => {
         );
       }
 
+      // Entrada virtual original
       if (u.pathname === '/api/paper/enter') {
-        if (typeof body.symbol !== 'string') {
+        if (typeof data.symbol !== 'string') {
           return json(res, 400, {
             error: 'Ativo obrigatório.'
           });
@@ -377,8 +435,9 @@ const server = http.createServer(async (req, res) => {
           return json(
             res,
             200,
-            await PAPER.enter(body.symbol)
+            await PAPER.enter(data.symbol)
           );
+
         } catch (error) {
           return json(res, 409, {
             error: error.message
@@ -391,7 +450,10 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // Servir somente arquivos públicos
+    // ======================================
+    // ARQUIVOS PUBLICOS
+    // ======================================
+
     if (
       req.method !== 'GET' &&
       req.method !== 'HEAD'
@@ -404,21 +466,30 @@ const server = http.createServer(async (req, res) => {
     const requested =
       u.pathname === '/'
         ? 'index.html'
-        : decodeURIComponent(u.pathname).replace(/^\/+/, '');
+        : decodeURIComponent(u.pathname)
+            .replace(/^\/+/, '');
 
-    const full = path.resolve(ROOT, requested);
+    const full = path.resolve(
+      ROOT,
+      requested
+    );
 
+    // Impedir navegação fora do projeto
     if (!full.startsWith(ROOT + path.sep)) {
       return json(res, 403, {
         error: 'Acesso negado.'
       });
     }
 
-    // Proteger motores internos, estados e segredos
+    // ======================================
+    // PROTECAO DE CODIGO E DADOS INTERNOS
+    // ======================================
+
     const privateFile =
       /(^|\/)\./.test(requested) ||
       /\.(env|lock|md)$/i.test(requested) ||
-      /^(server\.js|package\.json|quant-auto-bot\.js|quant-paper-bot\.js|quant-scalp-bot\.js|quant-(?:auto|paper|scalp)-state\.json(?:\.tmp)?)$/i.test(requested);
+      /^(server\.js|package\.json|quant-(?:auto|paper|scalp|unified)-bot\.js)$/i.test(requested) ||
+      /^(quant-(?:auto|paper|scalp|unified)-state\.json(?:\.tmp)?)$/i.test(requested);
 
     if (privateFile) {
       return json(res, 403, {
@@ -433,6 +504,7 @@ const server = http.createServer(async (req, res) => {
         'Content-Type':
           TYPES[path.extname(full).toLowerCase()] ||
           'application/octet-stream',
+
         'X-Content-Type-Options': 'nosniff',
         'Cache-Control': 'no-cache'
       });
@@ -450,7 +522,10 @@ const server = http.createServer(async (req, res) => {
     }
 
   } catch (error) {
-    console.error('SERVER_ERROR', error.message);
+    console.error(
+      'SERVER_ERROR',
+      error.message
+    );
 
     return json(res, 500, {
       error: 'Erro interno.'
@@ -458,15 +533,25 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// Iniciar servidor
+// ======================================
+// INICIAR SERVIDOR
+// ======================================
+
 server.listen(PORT, '0.0.0.0', () => {
   console.log(
-    `Agente Quant V3 ativo na porta ${PORT}`
+    'Agente Quant ativo na porta ' + PORT
   );
 });
 
-// Iniciar robô de 5 minutos
+// ======================================
+// INICIAR MOTORES
+// ======================================
+
+// Robô de 5 minutos
 AUTO.start();
 
-// Iniciar Scalping de 1 minuto
+// Scalping de 1 minuto
 SCALP.start();
+
+// NOVO MOTOR UNIFICADO
+UNIFIED.start();
