@@ -9,30 +9,52 @@ permissions:
 
 jobs:
   backtest:
+    name: Analisar estrategias historicas
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
-      - name: Checkout
+      - name: Baixar projeto do GitHub
         uses: actions/checkout@v4
 
-      - name: Configurar Node
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
+      - name: Verificar motor de backtest
+        run: node --check quant-backtest.js
+
       - name: Executar teste interno
         run: node quant-backtest.js --selftest
 
-      - name: Executar backtest historico
+      - name: Executar analise historica de dois anos
         run: node quant-backtest.js
 
-      - name: Salvar resultado
+      - name: Validar resultado historico
+        run: |
+          node -e "
+          const fs = require('fs');
+          const file = 'quant-backtest-report.json';
+          if (!fs.existsSync(file)) {
+            console.error('ERRO: relatorio nao foi criado.');
+            process.exit(1);
+          }
+          const report = JSON.parse(fs.readFileSync(file, 'utf8'));
+          if (!Array.isArray(report.coins) || report.coins.length === 0) {
+            console.error('ERRO: nenhuma moeda com historico valido.');
+            process.exit(1);
+          }
+          console.log('Moedas analisadas:', report.coins.length);
+          console.log('Resultados:', JSON.stringify(report.comparisons, null, 2));
+          console.log('Estrategia preliminar:', report.preferred || 'NENHUMA VALIDADA');
+          "
+
+      - name: Salvar relatorio para download
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: resultado-quant-backtest
-          path: |
-            quant-backtest-results.json
-            quant-backtest-report.md
-          if-no-files-found: warn
+          path: quant-backtest-report.json
+          if-no-files-found: error
+          retention-days: 30
