@@ -1,10 +1,15 @@
 
 'use strict';
 
-// AGENTE QUANT V4.1
-// ANALISE A CADA MINUTO
-// ESTRATEGIA EXPERIMENTAL ROMPIMENTO 4H
+// AGENTE QUANT V5 - SCALPING EXPERIMENTAL
 // SOMENTE OPERACOES FICTICIAS
+// Capital inicial: 1000 USDT
+// Entrada: 50 USDT
+// Meta diaria: 30 USDT
+// Perda maxima diaria: 20 USDT
+// Maximo de perdas: 3
+// Analise: 1 minuto
+// Monitor: 5 segundos
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -12,7 +17,7 @@ const crypto = require('node:crypto');
 
 const FILE = path.join(__dirname, 'quant-unified-state.json');
 
-const SYMBOLS = [
+const ASSETS = [
   'BTC', 'ETH', 'SOL', 'BNB', 'XRP',
   'LINK', 'AVAX', 'ADA', 'DOGE', 'SUI',
   'NEAR', 'LTC', 'TRX', 'UNI', 'BCH',
@@ -21,45 +26,46 @@ const SYMBOLS = [
 
 const DEFAULT = {
   enabled: false,
-  stake: 10,
-  goal: 50,
+  stake: 50,
+  goal: 30,
   lossLimit: 20,
   maxLosses: 3,
   maxPositions: 1,
   start: '09:00',
   stopPct: 1,
-  targetPct: 2.5
+  targetPct: 0.7
 };
 
 const FEE = 0.001;
 const SLIP = 0.0003;
-const ZONE = 'America/Sao_Paulo';
 const SCAN_MS = 60000;
-const MONITOR_MS = 15000;
-const MAX_SIGNAL_AGE_MS = 15 * 60000;
+const MONITOR_MS = 5000;
+const TARGET_NET = 0.22;
+const STOP_NET = 0.50;
+const MAX_HOLD_MS = 12 * 60000;
 
 const now = () => new Date().toISOString();
-const num = x => Number(Number(x).toFixed(6));
+const round = x => Number(Number(x).toFixed(6));
 
-function localDay(date = new Date()) {
+function day(date = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
-    timeZone: ZONE,
+    timeZone: 'America/Sao_Paulo',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
   }).format(date);
 }
 
-function localTime() {
+function clock() {
   return new Intl.DateTimeFormat('en-GB', {
-    timeZone: ZONE,
+    timeZone: 'America/Sao_Paulo',
     hour: '2-digit',
     minute: '2-digit',
     hour12: false
   }).format(new Date());
 }
 
-function initialState() {
+function blank() {
   return {
     settings: { ...DEFAULT },
     cash: 1000,
@@ -74,25 +80,21 @@ function initialState() {
     lastResults: [],
     lastError: null,
     lastSlot: null,
+    lastScanMs: 0,
     openedToday: 0,
     diagnostic: 'Aguardando ativacao',
-    usedSignals: {},
-    lastScanMs: 0
+    usedSignals: {}
   };
 }
 
-let st = initialState();
+let st = blank();
 let ready = false;
 let busy = false;
-let timer = null;
 
 function equity() {
   return st.cash + st.positions.reduce(
-    (sum, p) =>
-      sum +
-      p.qty *
-      (p.mark || p.entry) *
-      (1 - FEE - SLIP),
+    (sum, p) => sum + p.qty *
+      (p.mark || p.entry) * (1 - FEE - SLIP),
     0
   );
 }
@@ -102,44 +104,30 @@ function pnl() {
 }
 
 function losses() {
-  return st.trades.filter(
-    t =>
-      t.net < 0 &&
-      localDay(new Date(t.closedAt)) === st.day
+  return st.trades.filter(t =>
+    t.net < 0 &&
+    day(new Date(t.closedAt)) === st.day
   ).length;
 }
 
 function log(text, type = 'info') {
-  st.events.unshift({
-    at: now(),
-    text,
-    type
-  });
-
+  st.events.unshift({ at: now(), text, type });
   st.events = st.events.slice(0, 120);
 }
 
 async function save() {
-  const tmp = FILE + '.tmp';
-
-  await fs.writeFile(
-    tmp,
-    JSON.stringify(st),
-    { mode: 0o600 }
-  );
-
-  await fs.rename(tmp, FILE);
+  const temp = FILE + '.tmp';
+  await fs.writeFile(temp, JSON.stringify(st));
+  await fs.rename(temp, FILE);
 }
 
 function newDay() {
-  const today = localDay();
-
+  const today = day();
   if (today !== st.day) {
     st.day = today;
     st.startEquity = equity();
     st.openedToday = 0;
-
-    log('Novo dia ficticio: ' + today);
+    log('Novo dia de simulacao: ' + today);
   }
 }
 
@@ -149,34 +137,33 @@ async function load() {
       await fs.readFile(FILE, 'utf8')
     );
 
-    if (
-      !Number.isFinite(old.cash) ||
-      !Array.isArray(old.positions) ||
-      !Array.isArray(old.trades)
-    ) {
-      throw Error('Estado anterior invalido');
+    if (!Number.isFinite(old.cash) ||
+        !Array.isArray(old.positions) ||
+        !Array.isArray(old.trades)) {
+      throw Error('Estado invalido');
     }
 
     st = {
-      ...initialState(),
+      ...blank(),
       ...old,
       settings: {
         ...DEFAULT,
         ...old.settings,
-        enabled: false
+        enabled: false,
+        stake: 50,
+        goal: 30,
+        lossLimit: 20,
+        maxLosses: 3,
+        maxPositions: 1
       },
       usedSignals: old.usedSignals || {},
       lastScanMs: 0
     };
 
-    log('Reinicio: ativacao manual obrigatoria');
+    log('V5 carregado; ativacao manual necessaria');
   } catch {
-    st = initialState();
-
-    log(
-      'Carteira ficticia criada: 1000 USDT',
-      'warning'
-    );
+    st = blank();
+    log('Carteira ficticia inicializada', 'warning');
   }
 
   newDay();
@@ -185,364 +172,282 @@ async function load() {
 }
 
 async function legacy() {
-  const files = [
+  for (const file of [
     'quant-auto-state.json',
     'quant-scalp-state.json'
-  ];
-
-  for (const name of files) {
+  ]) {
     try {
-      const data = JSON.parse(
+      const old = JSON.parse(
         await fs.readFile(
-          path.join(__dirname, name),
-          'utf8'
+          path.join(__dirname, file), 'utf8'
         )
       );
-
-      if (data.settings?.enabled) {
-        return name;
-      }
+      if (old.settings?.enabled) return file;
     } catch {}
   }
-
   return null;
 }
 
 function blocking() {
-  if (!st.settings.enabled) {
-    return 'DESLIGADO';
-  }
-
-  if (localTime() < st.settings.start) {
-    return 'AGUARDANDO HORARIO';
-  }
-
-  if (losses() >= st.settings.maxLosses) {
-    return 'TRAVA: 3 LOSSES';
-  }
-
-  if (pnl() <= -st.settings.lossLimit) {
-    return 'LIMITE DIARIO DE PERDA';
-  }
-
-  if (pnl() >= st.settings.goal) {
-    return 'META DIARIA ATINGIDA';
-  }
-
-  if (
-    st.positions.length >=
-    st.settings.maxPositions
-  ) {
-    return 'POSICAO ABERTA';
-  }
-
+  if (!st.settings.enabled) return 'DESLIGADO';
+  if (clock() < st.settings.start) return 'AGUARDANDO HORARIO';
+  if (losses() >= st.settings.maxLosses) return 'TRAVA: 3 LOSSES';
+  if (pnl() <= -st.settings.lossLimit) return 'LIMITE DE PERDA';
+  if (pnl() >= st.settings.goal) return 'META DIARIA';
+  if (st.positions.length >= 1) return 'POSICAO ABERTA';
   return null;
 }
 
 async function binance(endpoint) {
-  let lastError;
+  let error;
 
   for (const host of [
     'https://data-api.binance.vision',
     'https://api.binance.com'
   ]) {
     const controller = new AbortController();
-    const timeout = setTimeout(
-      () => controller.abort(),
-      9000
-    );
+    const timer = setTimeout(() => controller.abort(), 8000);
 
     try {
       const response = await fetch(
         host + '/api/v3/' + endpoint,
-        {
-          signal: controller.signal,
-          cache: 'no-store'
-        }
+        { signal: controller.signal, cache: 'no-store' }
       );
 
       if (!response.ok) {
-        throw Error(
-          'Binance HTTP ' + response.status
-        );
+        throw Error('Binance HTTP ' + response.status);
       }
 
       return await response.json();
-    } catch (error) {
-      lastError = error;
+    } catch (e) {
+      error = e;
     } finally {
-      clearTimeout(timeout);
+      clearTimeout(timer);
     }
   }
 
-  throw lastError || Error('Binance indisponivel');
+  throw error || Error('Cotacao indisponivel');
 }
 
-async function orderBook(sym) {
+async function book(sym) {
   const data = await binance(
     'ticker/bookTicker?symbol=' + sym + 'USDT'
   );
 
-  const ask = Number(data.askPrice);
-  const bid = Number(data.bidPrice);
+  const ask = +data.askPrice;
+  const bid = +data.bidPrice;
 
   if (!(ask > 0 && bid > 0)) {
-    throw Error('Precos invalidos');
+    throw Error('Preco invalido');
   }
 
   return { ask, bid };
 }
 
-async function candles4h(sym) {
+async function candles(sym, interval) {
   const query = new URLSearchParams({
     symbol: sym + 'USDT',
-    interval: '4h',
-    limit: '120'
+    interval,
+    limit: '75'
   });
 
-  const rows = await binance(
-    'klines?' + query.toString()
-  );
+  const data = await binance('klines?' + query);
 
-  if (!Array.isArray(rows)) {
-    throw Error('Resposta de candles invalida');
-  }
-
-  // Nunca utilizar um candle ainda aberto.
-  return rows
-    .filter(row => Number(row[6]) < Date.now())
-    .map(row => ({
-      t: Number(row[0]),
-      closeTime: Number(row[6]),
-      o: Number(row[1]),
-      h: Number(row[2]),
-      l: Number(row[3]),
-      c: Number(row[4]),
-      v: Number(row[5])
+  return data
+    .filter(x => +x[6] < Date.now())
+    .map(x => ({
+      t: +x[0],
+      end: +x[6],
+      o: +x[1],
+      h: +x[2],
+      l: +x[3],
+      c: +x[4],
+      v: +x[5]
     }));
 }
 
-function emaSeries(closes, period) {
-  const output = Array(closes.length).fill(NaN);
+function ema(values, length) {
+  if (values.length < length) return NaN;
 
-  if (closes.length < period) {
-    return output;
+  let result = values.slice(0, length)
+    .reduce((a, b) => a + b, 0) / length;
+
+  for (let i = length; i < values.length; i++) {
+    result += (values[i] - result) * 2 / (length + 1);
   }
 
-  let value =
-    closes.slice(0, period).reduce(
-      (sum, x) => sum + x,
-      0
-    ) / period;
-
-  output[period - 1] = value;
-
-  for (let i = period; i < closes.length; i++) {
-    value +=
-      (closes[i] - value) *
-      (2 / (period + 1));
-
-    output[i] = value;
-  }
-
-  return output;
+  return result;
 }
 
-function calculateATR(bars) {
-  const tr = bars.map((b, i) => {
-    if (!i) {
-      return b.h - b.l;
-    }
+function rsi(values) {
+  const data = values.slice(-15);
+  if (data.length < 15) return 50;
 
-    return Math.max(
-      b.h - b.l,
-      Math.abs(b.h - bars[i - 1].c),
-      Math.abs(b.l - bars[i - 1].c)
-    );
-  });
+  let gain = 0;
+  let loss = 0;
 
-  let atr =
-    tr.slice(1, 15).reduce(
-      (sum, x) => sum + x,
-      0
-    ) / 14;
-
-  for (let i = 15; i < tr.length; i++) {
-    atr = (atr * 13 + tr[i]) / 14;
+  for (let i = 1; i < data.length; i++) {
+    const delta = data[i] - data[i - 1];
+    gain += Math.max(delta, 0);
+    loss += Math.max(-delta, 0);
   }
 
-  return atr;
+  if (loss === 0) return gain > 0 ? 100 : 50;
+  return 100 - 100 / (1 + gain / loss);
 }
 
-function analyze(bars) {
-  if (bars.length < 60) {
+function analyze(one, five) {
+  if (one.length < 45 || five.length < 45) {
     return {
       approved: false,
       score: 0,
-      why: 'Historico 4h insuficiente'
+      why: 'Historico insuficiente'
     };
   }
 
-  const i = bars.length - 1;
-  const bar = bars[i];
-  const closes = bars.map(b => b.c);
+  const b = one.at(-1);
+  const c1 = one.map(x => x.c);
+  const c5 = five.map(x => x.c);
 
-  const e20 = emaSeries(closes, 20);
-  const e50 = emaSeries(closes, 50);
+  const e9 = ema(c1, 9);
+  const e21 = ema(c1, 21);
+  const e5fast = ema(c5, 9);
+  const e5slow = ema(c5, 21);
 
-  const avgVolume =
-    bars.slice(i - 20, i).reduce(
-      (sum, b) => sum + b.v,
-      0
-    ) / 20;
+  const avgVolume = one.slice(-21, -1)
+    .reduce((sum, x) => sum + x.v, 0) / 20;
 
-  const priorHigh = Math.max(
-    ...bars.slice(i - 20, i).map(b => b.h)
-  );
+  const volumeRatio = b.v / (avgVolume || 1);
+  const high = Math.max(...one.slice(-7, -1).map(x => x.h));
+  const strength = rsi(c1);
 
-  const trend =
-    e20[i] > e50[i] &&
-    e20[i] > e20[i - 3] &&
-    bar.c > e50[i];
+  const trend5 =
+    e5fast > e5slow &&
+    c5.at(-1) > e5slow;
+
+  const trend1 =
+    e9 > e21 &&
+    b.c > e9;
 
   const breakout =
-    bar.c > priorHigh &&
-    bar.c > bar.o &&
-    avgVolume > 0 &&
-    bar.v >= 1.35 * avgVolume;
+    b.c > b.o &&
+    b.c > one.at(-2).c &&
+    b.c > high;
 
-  const atr = calculateATR(bars);
+  const volumeOK = volumeRatio >= 1.10;
+  const rsiOK = strength >= 52 && strength <= 76;
+
+  const fresh = Date.now() - b.end >= 0 &&
+    Date.now() - b.end < 90000;
+
+  const score =
+    (trend5 ? 30 : 0) +
+    (trend1 ? 25 : 0) +
+    (breakout ? 25 : 0) +
+    (volumeOK ? 10 : 0) +
+    (rsiOK ? 10 : 0);
 
   const approved =
-    trend &&
-    breakout &&
-    Number.isFinite(atr) &&
-    atr > 0;
-
-  const ageMs =
-    Date.now() - bar.closeTime;
+    trend5 && trend1 && breakout &&
+    volumeOK && rsiOK && fresh;
 
   return {
     approved,
-    score: approved
-      ? 100
-      : (trend ? 50 : 0) +
-        (breakout ? 40 : 0),
+    score,
     why: approved
-      ? 'Rompimento 4h confirmado'
-      : 'Aguardando tendencia e rompimento com volume',
-    atr: num(atr),
-    setup: 'rompimento-4h',
-    signalTime: bar.t,
-    signalCloseTime: bar.closeTime,
-    ageMs,
-    fresh: ageMs >= 0 &&
-      ageMs <= MAX_SIGNAL_AGE_MS,
-    volumeRatio: num(
-      bar.v / (avgVolume || 1)
-    ),
-    trendConfirmed: trend,
-    breakout5: breakout
+      ? 'Scalping aprovado'
+      : 'Aguardando tendencia, rompimento, volume e RSI',
+    setup: 'scalping-1m-5m',
+    signalTime: b.t,
+    signalCloseTime: b.end,
+    rsi: round(strength),
+    volumeRatio: round(volumeRatio),
+    trendConfirmed: trend5 && trend1
   };
 }
 
 async function universe() {
-  const [exchange, volumes, books] =
-    await Promise.all([
-      binance('exchangeInfo'),
-      binance('ticker/24hr'),
-      binance('ticker/bookTicker')
-    ]);
+  const [ex, volumes, books] = await Promise.all([
+    binance('exchangeInfo'),
+    binance('ticker/24hr'),
+    binance('ticker/bookTicker')
+  ]);
 
-  const tradable = new Set(
-    exchange.symbols
-      .filter(x =>
-        x.status === 'TRADING' &&
-        x.quoteAsset === 'USDT' &&
-        x.isSpotTradingAllowed !== false
-      )
-      .map(x => x.symbol)
+  const allowed = new Set(
+    ex.symbols.filter(x =>
+      x.status === 'TRADING' &&
+      x.quoteAsset === 'USDT' &&
+      x.isSpotTradingAllowed !== false
+    ).map(x => x.symbol)
   );
 
-  const volumeMap = new Map(
-    volumes.map(x => [
-      x.symbol,
-      Number(x.quoteVolume)
-    ])
+  const vol = new Map(
+    volumes.map(x => [x.symbol, +x.quoteVolume])
   );
 
-  const bookMap = new Map(
+  const quotes = new Map(
     books.map(x => [
       x.symbol,
-      {
-        ask: Number(x.askPrice),
-        bid: Number(x.bidPrice)
-      }
+      { ask: +x.askPrice, bid: +x.bidPrice }
     ])
   );
 
-  return SYMBOLS.map(sym => {
+  return ASSETS.map(sym => {
     const key = sym + 'USDT';
-    const quote = bookMap.get(key);
+    const quote = quotes.get(key);
 
-    const spread =
-      quote?.ask > 0 && quote?.bid > 0
-        ? 100 *
-          (quote.ask - quote.bid) /
-          ((quote.ask + quote.bid) / 2)
-        : Infinity;
+    const spread = quote?.ask > 0 && quote?.bid > 0
+      ? 100 * (quote.ask - quote.bid) /
+        ((quote.ask + quote.bid) / 2)
+      : Infinity;
 
     return {
       sym,
       quote,
       spread,
-      eligible:
-        tradable.has(key) &&
-        (volumeMap.get(key) || 0) >= 5000000 &&
-        spread <= 0.10
+      eligible: allowed.has(key) &&
+        (vol.get(key) || 0) >= 5000000 &&
+        spread <= 0.08
     };
   });
 }
 
 async function closePosition(p) {
-  const quote = await orderBook(p.sym);
+  const quote = await book(p.sym);
   p.mark = quote.bid;
-
-  const stop =
-    p.stopPrice ||
-    p.entry * (1 - st.settings.stopPct / 100);
-
-  const target =
-    p.targetPrice ||
-    p.entry * (1 + st.settings.targetPct / 100);
-
-  let reason = null;
-
-  if (quote.bid <= stop) {
-    reason = 'STOP';
-  } else if (quote.bid >= target) {
-    reason = 'ALVO';
-  } else if (
-    Date.now() -
-    (p.openedMs || Date.now()) >=
-    48 * 3600000
-  ) {
-    reason = 'TEMPO_48H';
-  }
-
-  if (!reason) {
-    return;
-  }
 
   const exit = quote.bid * (1 - SLIP);
   const proceeds = p.qty * exit * (1 - FEE);
   const net = proceeds - p.cost;
+  const age = Date.now() - (p.openedMs || Date.now());
+
+  let reason = null;
+
+  if (p.setup === 'scalping-1m-5m') {
+    if (net >= (p.targetNet ?? TARGET_NET)) {
+      reason = 'LUCRO_LIQUIDO';
+    } else if (net <= -(p.stopNet ?? STOP_NET)) {
+      reason = 'STOP';
+    } else if (age >= MAX_HOLD_MS) {
+      reason = 'TEMPO_12M';
+    }
+  } else {
+    // Preserva o tratamento das posicoes antigas.
+    const stop = p.stopPrice ||
+      p.entry * (1 - st.settings.stopPct / 100);
+
+    const target = p.targetPrice ||
+      p.entry * (1 + st.settings.targetPct / 100);
+
+    if (quote.bid <= stop) reason = 'STOP_ANTIGO';
+    else if (quote.bid >= target) reason = 'ALVO_ANTIGO';
+    else if (age >= 48 * 3600000) reason = 'TEMPO_48H';
+  }
+
+  if (!reason) return;
 
   st.cash += proceeds;
-
-  st.positions = st.positions.filter(
-    x => x !== p
-  );
+  st.positions = st.positions.filter(x => x !== p);
 
   st.trades.unshift({
     symbol: p.sym,
@@ -559,9 +464,8 @@ async function closePosition(p) {
   st.trades = st.trades.slice(0, 500);
 
   log(
-    'VENDA FICTICIA ' +
-      p.sym + ': ' +
-      num(net) + ' USDT (' + reason + ')',
+    'VENDA FICTICIA ' + p.sym + ' ' +
+    round(net) + ' USDT - ' + reason,
     net >= 0 ? 'profit' : 'loss'
   );
 }
@@ -571,11 +475,7 @@ async function monitor() {
     try {
       await closePosition(p);
     } catch (error) {
-      st.lastError =
-        'Monitor ' +
-        p.sym + ': ' +
-        error.message;
-
+      st.lastError = 'Monitor: ' + error.message;
       log(st.lastError, 'warning');
     }
   }
@@ -583,52 +483,49 @@ async function monitor() {
 
 async function scan() {
   st.lastAttempt = now();
-  st.diagnostic = 'Analisando 20 moedas';
+  st.diagnostic = 'Procurando oportunidades de scalping';
 
   const assets = await universe();
   const results = [];
 
-  for (
-    let i = 0;
-    i < assets.length;
-    i += 5
-  ) {
+  for (let i = 0; i < assets.length; i += 5) {
     const group = assets.slice(i, i + 5);
 
     const settled = await Promise.allSettled(
-      group.map(async asset => {
-        if (!asset.eligible) {
+      group.map(async a => {
+        if (!a.eligible) {
           return {
-            sym: asset.sym,
+            sym: a.sym,
             approved: false,
-            why: 'Liquidez ou spread inadequado'
+            score: 0,
+            why: 'Liquidez ou spread'
           };
         }
 
+        const [one, five] = await Promise.all([
+          candles(a.sym, '1m'),
+          candles(a.sym, '5m')
+        ]);
+
         return {
-          sym: asset.sym,
-          ask: asset.quote.ask,
-          spread: asset.spread,
-          ...analyze(
-            await candles4h(asset.sym)
-          )
+          sym: a.sym,
+          ask: a.quote.ask,
+          spread: a.spread,
+          ...analyze(one, five)
         };
       })
     );
 
-    group.forEach((asset, j) => {
+    group.forEach((a, j) => {
       results.push(
         settled[j].status === 'fulfilled'
           ? settled[j].value
           : {
-              sym: asset.sym,
+              sym: a.sym,
               approved: false,
-              why:
-                'Erro: ' +
-                String(
-                  settled[j].reason?.message ||
-                  'desconhecido'
-                )
+              score: 0,
+              why: 'Erro: ' +
+                String(settled[j].reason?.message || 'desconhecido')
             }
       );
     });
@@ -637,86 +534,45 @@ async function scan() {
   st.lastResults = results;
   st.lastScan = now();
 
-  const approved = results.filter(
-    x => x.approved
-  );
-
-  const candidates = approved
+  const candidates = results
     .filter(x =>
-      x.fresh &&
+      x.approved &&
       st.usedSignals[x.sym] !== x.signalTime
     )
-    .sort(
-      (a, b) => a.spread - b.spread
-    );
+    .sort((a, b) => b.score - a.score ||
+      a.spread - b.spread);
 
   st.diagnostic =
-    approved.length +
-    ' sinais 4h confirmados; ' +
-    candidates.length +
-    ' entradas recentes disponiveis / ' +
-    results.length +
-    ' moedas';
+    candidates.length + ' oportunidades / ' +
+    results.length + ' moedas';
 
-  log(
-    'ANALISE 1 MINUTO: ' +
-      st.diagnostic,
-    'scan'
-  );
+  log('ANALISE SCALPING: ' + st.diagnostic, 'scan');
 
-  if (!candidates.length || blocking()) {
-    return;
-  }
+  if (!candidates.length || blocking()) return;
 
   for (const pick of candidates) {
     try {
-      const quote = await orderBook(pick.sym);
+      const quote = await book(pick.sym);
 
-      if (
-        quote.ask >
-        pick.ask * 1.002
-      ) {
+      if (quote.ask > pick.ask * 1.001) continue;
+
+      if (Date.now() - pick.signalCloseTime > 90000) {
         continue;
       }
 
-      const stake = Math.min(
-        st.settings.stake,
-        st.cash / (1 + FEE)
-      );
-
-      if (stake < 10) {
-        st.diagnostic =
-          'Saldo insuficiente';
-        return;
-      }
-
-      const stop =
-        quote.ask - 1.5 * pick.atr;
-
-      const target =
-        quote.ask + 2.5 * pick.atr;
-
-      const entry =
-        quote.ask * (1 + SLIP);
-
-      if (
-        !(stop > 0 &&
-          stop < quote.bid &&
-          target > entry)
-      ) {
+      if (st.usedSignals[pick.sym] === pick.signalTime) {
         continue;
       }
 
-      // Previne repetir um sinal ja negociado.
-      if (
-        st.usedSignals[pick.sym] ===
-        pick.signalTime
-      ) {
-        continue;
-      }
-
+      const stake = 50;
+      const entry = quote.ask * (1 + SLIP);
       const qty = stake / entry;
       const cost = stake * (1 + FEE);
+
+      if (st.cash < cost) {
+        st.diagnostic = 'Saldo insuficiente';
+        return;
+      }
 
       st.cash -= cost;
 
@@ -728,77 +584,57 @@ async function scan() {
         mark: quote.bid,
         openedAt: now(),
         openedMs: Date.now(),
-        setup: 'rompimento-4h-experimental',
-        stopPrice: stop,
-        targetPrice: target,
-        score: 100,
-        signalTime: pick.signalTime
+        setup: 'scalping-1m-5m',
+        targetNet: TARGET_NET,
+        stopNet: STOP_NET,
+        signalTime: pick.signalTime,
+        score: pick.score
       });
 
-      st.usedSignals[pick.sym] =
-        pick.signalTime;
-
+      st.usedSignals[pick.sym] = pick.signalTime;
       st.openedToday++;
 
       st.diagnostic =
-        'COMPRA FICTICIA ' +
-        pick.sym +
-        ' POR ROMPIMENTO 4H';
+        'COMPRA FICTICIA ' + pick.sym + ' - 50 USDT';
 
       log(st.diagnostic, 'buy');
-
       return;
     } catch (error) {
       st.lastError = error.message;
-      log(
-        'Entrada recusada: ' + error.message,
-        'warning'
-      );
+      log('Entrada recusada: ' + error.message, 'warning');
     }
   }
 }
 
 async function cycle() {
-  if (!ready || busy) {
-    return;
-  }
+  if (!ready || busy) return;
 
   busy = true;
 
   try {
     newDay();
 
-    // Posicoes continuam monitoradas
-    // mesmo se o executor estiver desligado.
     await monitor();
 
-    const blocker = blocking();
+    const reason = blocking();
 
-    if (blocker) {
-      st.diagnostic = blocker;
+    if (reason) {
+      st.diagnostic = reason;
       await save();
       return;
     }
 
-    const oldBot = await legacy();
+    const old = await legacy();
 
-    if (oldBot) {
-      st.diagnostic =
-        'BLOQUEADO: desligue ' + oldBot;
+    if (old) {
+      st.diagnostic = 'Desligue primeiro: ' + old;
       await save();
       return;
     }
 
-    // VARREDURA A CADA 60 SEGUNDOS.
-    // O monitor continua a cada 15 segundos.
-    const elapsed =
-      Date.now() - st.lastScanMs;
-
-    if (elapsed >= SCAN_MS) {
+    if (Date.now() - st.lastScanMs >= SCAN_MS) {
       st.lastScanMs = Date.now();
-      st.lastSlot = Math.floor(
-        Date.now() / SCAN_MS
-      );
+      st.lastSlot = Math.floor(Date.now() / SCAN_MS);
 
       await scan();
     }
@@ -806,9 +642,7 @@ async function cycle() {
     await save();
   } catch (error) {
     st.lastError = error.message;
-    st.diagnostic =
-      'ERRO: ' + error.message;
-
+    st.diagnostic = 'ERRO: ' + error.message;
     log(st.diagnostic, 'warning');
 
     try {
@@ -828,224 +662,151 @@ function state() {
     netToday: pnl(),
     equity: equity(),
     blocking: blocking(),
-    clockBR: localTime(),
+    clockBR: clock(),
     working: busy,
     simulation: true,
     realOrders: false,
     storage: 'Arquivo temporario no Render',
-    system: 'Unified Paper V4.1',
+    system: 'Agente Quant V5 - Scalping',
     scanInterval: '1m',
-    strategyTimeframe: '4h',
-    monitorInterval: '15s'
+    monitorInterval: '5s',
+    strategyTimeframe: '1m + 5m',
+    profitTargetUSDT: TARGET_NET,
+    stopUSDT: STOP_NET
   };
 }
 
 function reply(res, status, data) {
   res.writeHead(status, {
-    'Content-Type':
-      'application/json; charset=utf-8',
+    'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff'
   });
-
   res.end(JSON.stringify(data));
 }
 
-function valid(pin) {
-  const secret =
-    process.env.QUANT_ACCESS_PIN || '';
+function pinValid(pin) {
+  const secret = process.env.QUANT_ACCESS_PIN || '';
 
-  if (
-    !secret ||
-    typeof pin !== 'string'
-  ) {
-    return false;
-  }
+  if (!secret || typeof pin !== 'string') return false;
 
   const a = Buffer.from(secret);
   const b = Buffer.from(pin);
 
-  return (
-    a.length === b.length &&
-    crypto.timingSafeEqual(a, b)
-  );
+  return a.length === b.length &&
+    crypto.timingSafeEqual(a, b);
 }
 
-async function body(req) {
+async function readBody(req) {
   let text = '';
 
   for await (const chunk of req) {
     text += chunk;
-
-    if (text.length > 2048) {
-      throw Error('Payload extenso');
-    }
+    if (text.length > 2048) throw Error('Payload extenso');
   }
 
   return text ? JSON.parse(text) : {};
 }
 
-async function handle(req, res, u) {
-  if (
-    !u.pathname.startsWith(
-      '/api/quant-unified/'
-    )
-  ) {
+async function handle(req, res, url) {
+  if (!url.pathname.startsWith('/api/quant-unified/')) {
     return false;
   }
 
-  if (
-    !valid(req.headers['x-quant-pin'])
-  ) {
-    reply(res, 401, {
-      error: 'PIN invalido'
-    });
+  if (!pinValid(req.headers['x-quant-pin'])) {
+    reply(res, 401, { error: 'PIN invalido' });
     return true;
   }
 
   if (!ready) {
-    reply(res, 503, {
-      error: 'Motor inicializando'
-    });
+    reply(res, 503, { error: 'Motor inicializando' });
     return true;
   }
 
   try {
-    if (
-      req.method === 'GET' &&
-      u.pathname ===
-        '/api/quant-unified/status'
-    ) {
+    if (req.method === 'GET' &&
+        url.pathname === '/api/quant-unified/status') {
       reply(res, 200, state());
       return true;
     }
 
     if (req.method !== 'POST') {
-      reply(res, 405, {
-        error: 'Metodo invalido'
-      });
+      reply(res, 405, { error: 'Metodo invalido' });
       return true;
     }
 
-    const data = await body(req);
+    const data = await readBody(req);
 
-    if (
-      u.pathname ===
-      '/api/quant-unified/config'
-    ) {
-      if (
-        !Number.isFinite(data.stake) ||
-        data.stake < 10 ||
-        data.stake > 100 ||
-        !Number.isFinite(data.goal) ||
-        data.goal <= 0 ||
-        data.goal > 100 ||
-        !Number.isFinite(data.lossLimit) ||
-        data.lossLimit < 1 ||
-        data.lossLimit > 100 ||
-        !/^([01]\d|2[0-3]):[0-5]\d$/.test(
-          data.start
-        )
-      ) {
-        throw Error('Parametros invalidos');
+    if (url.pathname === '/api/quant-unified/config') {
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(data.start)) {
+        throw Error('Horario invalido');
       }
 
-      Object.assign(st.settings, {
-        stake: data.stake,
-        goal: data.goal,
-        lossLimit: data.lossLimit,
-        start: data.start
-      });
+      st.settings.stake = 50;
+      st.settings.goal = 30;
+      st.settings.lossLimit = 20;
+      st.settings.maxLosses = 3;
+      st.settings.start = data.start;
 
-      log('Parametros salvos');
+      log('Parametros V5 salvos');
       await save();
 
       reply(res, 200, state());
       return true;
     }
 
-    if (
-      u.pathname ===
-      '/api/quant-unified/switch'
-    ) {
-      if (
-        typeof data.enabled !== 'boolean'
-      ) {
-        throw Error('enabled invalido');
+    if (url.pathname === '/api/quant-unified/switch') {
+      if (typeof data.enabled !== 'boolean') {
+        throw Error('Comando invalido');
       }
 
       if (data.enabled) {
-        const oldBot = await legacy();
-
-        if (oldBot) {
-          throw Error(
-            'Desligue ' + oldBot + ' antes'
-          );
-        }
+        const old = await legacy();
+        if (old) throw Error('Desligue ' + old);
       }
 
       st.settings.enabled = data.enabled;
 
-      // Ao ativar, efetuar nova verificacao
-      // sem esperar um bloco de quatro horas.
-      if (data.enabled) {
-        st.lastScanMs = 0;
-      }
+      if (data.enabled) st.lastScanMs = 0;
 
-      log(
-        data.enabled
-          ? 'EXECUTOR V4.1 ATIVADO'
-          : 'EXECUTOR DESLIGADO',
-        data.enabled ? 'buy' : 'warning'
-      );
+      log(data.enabled
+        ? 'SCALPING V5 ATIVADO'
+        : 'SCALPING V5 DESLIGADO');
 
       await save();
-
       reply(res, 200, state());
 
       if (data.enabled) {
-        queueMicrotask(() =>
-          cycle().catch(() => {})
-        );
+        queueMicrotask(() => cycle().catch(() => {}));
       }
 
       return true;
     }
 
-    if (
-      u.pathname ===
-      '/api/quant-unified/test-trade'
-    ) {
+    if (url.pathname === '/api/quant-unified/test-trade') {
       if (busy || st.positions.length) {
-        throw Error(
-          'Motor ocupado ou posicao aberta'
-        );
+        throw Error('Motor ocupado ou posicao aberta');
       }
 
-      const sym = SYMBOLS.includes(data.symbol)
+      const sym = ASSETS.includes(data.symbol)
         ? data.symbol
         : 'BTC';
 
-      const buyQuote = await orderBook(sym);
-      const sellQuote = await orderBook(sym);
+      const first = await book(sym);
+      const second = await book(sym);
 
-      const entry =
-        buyQuote.ask * (1 + SLIP);
-
-      const qty = 10 / entry;
-      const cost = 10 * (1 + FEE);
-
-      const exit =
-        sellQuote.bid * (1 - SLIP);
-
-      const net =
-        qty * exit * (1 - FEE) - cost;
+      const stake = 50;
+      const entry = first.ask * (1 + SLIP);
+      const qty = stake / entry;
+      const cost = stake * (1 + FEE);
+      const exit = second.bid * (1 - SLIP);
+      const net = qty * exit * (1 - FEE) - cost;
 
       const test = {
         symbol: sym,
         entry,
         exit,
-        stake: 10,
+        stake,
         cost,
         net,
         openedAt: now(),
@@ -1055,34 +816,21 @@ async function handle(req, res, u) {
       };
 
       st.testTrades.unshift(test);
-      st.testTrades =
-        st.testTrades.slice(0, 30);
+      st.testTrades = st.testTrades.slice(0, 30);
 
-      log(
-        'TESTE ISOLADO ' +
-        sym + ': ' +
-        num(net) + ' USDT'
-      );
+      log('TESTE ISOLADO ' + sym + ' ' +
+        round(net) + ' USDT');
 
       await save();
 
-      reply(res, 200, {
-        ...state(),
-        test
-      });
-
+      reply(res, 200, { ...state(), test });
       return true;
     }
 
-    reply(res, 404, {
-      error: 'Rota inexistente'
-    });
-
+    reply(res, 404, { error: 'Rota inexistente' });
     return true;
   } catch (error) {
-    reply(res, 400, {
-      error: error.message
-    });
+    reply(res, 400, { error: error.message });
     return true;
   }
 }
@@ -1090,34 +838,19 @@ async function handle(req, res, u) {
 function start() {
   load()
     .then(() => {
-      timer = setInterval(
-        () =>
-          cycle().catch(error =>
-            console.error(
-              'QUANT_V4_1',
-              error.message
-            )
-          ),
+      const timer = setInterval(
+        () => cycle().catch(error =>
+          console.error('QUANT_V5', error.message)),
         MONITOR_MS
       );
 
       timer.unref?.();
 
-      log(
-        'Agente Quant V4.1 pronto: ' +
-        'analise 1m, estrategia 4h, ' +
-        'monitor 15s'
-      );
+      log('V5 pronto: entrada 50, meta 30, ' +
+        'analise 1m, monitor 5s');
     })
     .catch(error =>
-      console.error(
-        'QUANT_INIT',
-        error.message
-      )
-    );
+      console.error('QUANT_V5_INIT', error.message));
 }
 
-module.exports = {
-  handle,
-  start
-};
+module.exports = { handle, start };
