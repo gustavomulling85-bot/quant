@@ -342,6 +342,56 @@ ASSETS.forEach(s=>{const o=document.createElement('option');o.value=s;o.textCont
   atualizar();
 })();
 </script>
+
+<!-- AGENTE QUANT — MOTOR UNIFICADO -->
+
+<script
+  src="quant-unified-ui.js"
+  defer>
+</script>
+
+<script>
+(() => {
+  'use strict';
+
+  function conectarMotorUnificado() {
+    const menu = document.querySelector('.nav');
+    const painel = document.getElementById(
+      'quant-unified-panel'
+    );
+
+    if (!menu || !painel) {
+      return;
+    }
+
+    const existente = menu.querySelector(
+      'a[href="#quant-unified-panel"]'
+    );
+
+    if (existente) {
+      return;
+    }
+
+    const botao = document.createElement('a');
+
+    botao.href = '#quant-unified-panel';
+    botao.textContent = '🤖 Motor Unificado';
+
+    menu.appendChild(botao);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener(
+      'DOMContentLoaded',
+      conectarMotorUnificado
+    );
+  } else {
+    conectarMotorUnificado();
+  }
+})();
+</script>
+
 </body></html>
+
 
 
