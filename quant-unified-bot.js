@@ -1,27 +1,30 @@
 
 'use strict';
 
-// AGENTE QUANT V5 - SCALPING EXPERIMENTAL
-// SOMENTE OPERACOES FICTICIAS
-// Capital inicial: 1000 USDT
+// AGENTE QUANT V5.1
+// SCALPING AUTOMATICO EXPERIMENTAL
+// SOMENTE SIMULACAO - SEM ORDENS REAIS
 // Entrada: 50 USDT
 // Meta diaria: 30 USDT
-// Perda maxima diaria: 20 USDT
-// Maximo de perdas: 3
-// Analise: 1 minuto
-// Monitor: 5 segundos
+// Perda diaria: 20 USDT
+// Maximo: 3 perdas
+// Analise: 60 segundos
+// Monitoramento: 5 segundos
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const FILE = path.join(__dirname, 'quant-unified-state.json');
+const FILE = path.join(
+  __dirname,
+  'quant-unified-state.json'
+);
 
 const ASSETS = [
-  'BTC', 'ETH', 'SOL', 'BNB', 'XRP',
-  'LINK', 'AVAX', 'ADA', 'DOGE', 'SUI',
-  'NEAR', 'LTC', 'TRX', 'UNI', 'BCH',
-  'DOT', 'APT', 'ARB', 'AAVE', 'XLM'
+  'BTC','ETH','SOL','BNB','XRP',
+  'LINK','AVAX','ADA','DOGE','SUI',
+  'NEAR','LTC','TRX','UNI','BCH',
+  'DOT','APT','ARB','AAVE','XLM'
 ];
 
 const DEFAULT = {
@@ -38,31 +41,49 @@ const DEFAULT = {
 
 const FEE = 0.001;
 const SLIP = 0.0003;
+
 const SCAN_MS = 60000;
 const MONITOR_MS = 5000;
+const SIGNAL_MAX_AGE = 120000;
+const MAX_HOLD_MS = 12 * 60000;
+
 const TARGET_NET = 0.22;
 const STOP_NET = 0.50;
-const MAX_HOLD_MS = 12 * 60000;
 
 const now = () => new Date().toISOString();
 const round = x => Number(Number(x).toFixed(6));
 
 function day(date = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Sao_Paulo',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).format(date);
+  const parts = new Intl.DateTimeFormat(
+    'en-US',
+    {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }
+  ).formatToParts(date);
+
+  const part = type =>
+    parts.find(x => x.type === type)?.value;
+
+  return (
+    part('year') + '-' +
+    part('month') + '-' +
+    part('day')
+  );
 }
 
 function clock() {
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'America/Sao_Paulo',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  }).format(new Date());
+  return new Intl.DateTimeFormat(
+    'en-GB',
+    {
+      timeZone: 'America/Sao_Paulo',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }
+  ).format(new Date());
 }
 
 function blank() {
@@ -83,18 +104,27 @@ function blank() {
     lastScanMs: 0,
     openedToday: 0,
     diagnostic: 'Aguardando ativacao',
-    usedSignals: {}
+    usedSignals: {},
+    stats: {
+      scans: 0,
+      signals: 0,
+      rejected: 0
+    }
   };
 }
 
 let st = blank();
 let ready = false;
 let busy = false;
+let pendingSave = Promise.resolve();
 
 function equity() {
   return st.cash + st.positions.reduce(
-    (sum, p) => sum + p.qty *
-      (p.mark || p.entry) * (1 - FEE - SLIP),
+    (sum, p) =>
+      sum +
+      p.qty *
+      (p.mark || p.entry) *
+      (1 - FEE - SLIP),
     0
   );
 }
@@ -111,23 +141,43 @@ function losses() {
 }
 
 function log(text, type = 'info') {
-  st.events.unshift({ at: now(), text, type });
+  st.events.unshift({
+    at: now(),
+    text,
+    type
+  });
+
   st.events = st.events.slice(0, 120);
 }
 
-async function save() {
-  const temp = FILE + '.tmp';
-  await fs.writeFile(temp, JSON.stringify(st));
-  await fs.rename(temp, FILE);
+function save() {
+  // Evita gravacoes simultaneas.
+  pendingSave = pendingSave
+    .catch(() => {})
+    .then(async () => {
+      const tmp = FILE + '.tmp';
+
+      await fs.writeFile(
+        tmp,
+        JSON.stringify(st),
+        { mode: 0o600 }
+      );
+
+      await fs.rename(tmp, FILE);
+    });
+
+  return pendingSave;
 }
 
 function newDay() {
   const today = day();
+
   if (today !== st.day) {
     st.day = today;
     st.startEquity = equity();
     st.openedToday = 0;
-    log('Novo dia de simulacao: ' + today);
+
+    log('Novo dia ficticio: ' + today);
   }
 }
 
@@ -137,10 +187,12 @@ async function load() {
       await fs.readFile(FILE, 'utf8')
     );
 
-    if (!Number.isFinite(old.cash) ||
-        !Array.isArray(old.positions) ||
-        !Array.isArray(old.trades)) {
-      throw Error('Estado invalido');
+    if (
+      !Number.isFinite(old.cash) ||
+      !Array.isArray(old.positions) ||
+      !Array.isArray(old.trades)
+    ) {
+      throw Error('Estado anterior invalido');
     }
 
     st = {
@@ -157,13 +209,23 @@ async function load() {
         maxPositions: 1
       },
       usedSignals: old.usedSignals || {},
+      stats: {
+        scans: 0,
+        signals: 0,
+        rejected: 0
+      },
       lastScanMs: 0
     };
 
-    log('V5 carregado; ativacao manual necessaria');
+    log('V5.1 carregada; ativacao manual');
+
   } catch {
     st = blank();
-    log('Carteira ficticia inicializada', 'warning');
+
+    log(
+      'Carteira ficticia inicializada',
+      'warning'
+    );
   }
 
   newDay();
@@ -177,68 +239,103 @@ async function legacy() {
     'quant-scalp-state.json'
   ]) {
     try {
-      const old = JSON.parse(
+      const data = JSON.parse(
         await fs.readFile(
-          path.join(__dirname, file), 'utf8'
+          path.join(__dirname, file),
+          'utf8'
         )
       );
-      if (old.settings?.enabled) return file;
+
+      if (data.settings?.enabled) {
+        return file;
+      }
     } catch {}
   }
+
   return null;
 }
 
 function blocking() {
-  if (!st.settings.enabled) return 'DESLIGADO';
-  if (clock() < st.settings.start) return 'AGUARDANDO HORARIO';
-  if (losses() >= st.settings.maxLosses) return 'TRAVA: 3 LOSSES';
-  if (pnl() <= -st.settings.lossLimit) return 'LIMITE DE PERDA';
-  if (pnl() >= st.settings.goal) return 'META DIARIA';
-  if (st.positions.length >= 1) return 'POSICAO ABERTA';
+  if (!st.settings.enabled) {
+    return 'DESLIGADO';
+  }
+
+  if (clock() < st.settings.start) {
+    return 'AGUARDANDO HORARIO';
+  }
+
+  if (losses() >= st.settings.maxLosses) {
+    return 'TRAVA: 3 LOSSES';
+  }
+
+  if (pnl() <= -st.settings.lossLimit) {
+    return 'LIMITE DIARIO DE PERDA';
+  }
+
+  if (pnl() >= st.settings.goal) {
+    return 'META DIARIA ATINGIDA';
+  }
+
+  if (st.positions.length >= 1) {
+    return 'POSICAO ABERTA';
+  }
+
   return null;
 }
 
 async function binance(endpoint) {
-  let error;
+  let failure;
 
   for (const host of [
     'https://data-api.binance.vision',
     'https://api.binance.com'
   ]) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
+
+    const timer = setTimeout(
+      () => controller.abort(),
+      8000
+    );
 
     try {
       const response = await fetch(
         host + '/api/v3/' + endpoint,
-        { signal: controller.signal, cache: 'no-store' }
+        {
+          signal: controller.signal,
+          cache: 'no-store'
+        }
       );
 
       if (!response.ok) {
-        throw Error('Binance HTTP ' + response.status);
+        throw Error(
+          'Binance HTTP ' + response.status
+        );
       }
 
       return await response.json();
-    } catch (e) {
-      error = e;
+
+    } catch (error) {
+      failure = error;
+
     } finally {
       clearTimeout(timer);
     }
   }
 
-  throw error || Error('Cotacao indisponivel');
+  throw failure || Error('Binance indisponivel');
 }
 
 async function book(sym) {
   const data = await binance(
-    'ticker/bookTicker?symbol=' + sym + 'USDT'
+    'ticker/bookTicker?symbol=' +
+    sym + 'USDT'
   );
 
-  const ask = +data.askPrice;
-  const bid = +data.bidPrice;
+  const ask = Number(data.askPrice);
+  const bid = Number(data.bidPrice);
 
   if (!(ask > 0 && bid > 0)) {
-    throw Error('Preco invalido');
+    throw Error('Cotacao invalida');
   }
 
   return { ask, bid };
@@ -251,49 +348,69 @@ async function candles(sym, interval) {
     limit: '75'
   });
 
-  const data = await binance('klines?' + query);
+  const rows = await binance(
+    'klines?' + query
+  );
 
-  return data
-    .filter(x => +x[6] < Date.now())
+  if (!Array.isArray(rows)) {
+    throw Error('Candles invalidos');
+  }
+
+  return rows
+    .filter(x => Number(x[6]) < Date.now())
     .map(x => ({
-      t: +x[0],
-      end: +x[6],
-      o: +x[1],
-      h: +x[2],
-      l: +x[3],
-      c: +x[4],
-      v: +x[5]
+      t: Number(x[0]),
+      end: Number(x[6]),
+      o: Number(x[1]),
+      h: Number(x[2]),
+      l: Number(x[3]),
+      c: Number(x[4]),
+      v: Number(x[5])
     }));
 }
 
-function ema(values, length) {
-  if (values.length < length) return NaN;
-
-  let result = values.slice(0, length)
-    .reduce((a, b) => a + b, 0) / length;
-
-  for (let i = length; i < values.length; i++) {
-    result += (values[i] - result) * 2 / (length + 1);
+function ema(values, period) {
+  if (values.length < period) {
+    return NaN;
   }
 
-  return result;
+  let value = values
+    .slice(0, period)
+    .reduce((a, b) => a + b, 0) /
+    period;
+
+  for (let i = period; i < values.length; i++) {
+    value +=
+      (values[i] - value) *
+      2 / (period + 1);
+  }
+
+  return value;
 }
 
 function rsi(values) {
   const data = values.slice(-15);
-  if (data.length < 15) return 50;
 
-  let gain = 0;
-  let loss = 0;
+  if (data.length < 15) {
+    return 50;
+  }
+
+  let gains = 0;
+  let lossesValue = 0;
 
   for (let i = 1; i < data.length; i++) {
     const delta = data[i] - data[i - 1];
-    gain += Math.max(delta, 0);
-    loss += Math.max(-delta, 0);
+
+    gains += Math.max(delta, 0);
+    lossesValue += Math.max(-delta, 0);
   }
 
-  if (loss === 0) return gain > 0 ? 100 : 50;
-  return 100 - 100 / (1 + gain / loss);
+  if (!lossesValue) {
+    return gains ? 100 : 50;
+  }
+
+  return 100 -
+    100 / (1 + gains / lossesValue);
 }
 
 function analyze(one, five) {
@@ -301,112 +418,178 @@ function analyze(one, five) {
     return {
       approved: false,
       score: 0,
-      why: 'Historico insuficiente'
+      why: 'Historico insuficiente',
+      checks: {}
     };
   }
 
   const b = one.at(-1);
+  const previous = one.at(-2);
+
   const c1 = one.map(x => x.c);
   const c5 = five.map(x => x.c);
 
-  const e9 = ema(c1, 9);
-  const e21 = ema(c1, 21);
-  const e5fast = ema(c5, 9);
-  const e5slow = ema(c5, 21);
+  const ema9m1 = ema(c1, 9);
+  const ema21m1 = ema(c1, 21);
 
-  const avgVolume = one.slice(-21, -1)
-    .reduce((sum, x) => sum + x.v, 0) / 20;
+  const ema9m5 = ema(c5, 9);
+  const ema21m5 = ema(c5, 21);
 
-  const volumeRatio = b.v / (avgVolume || 1);
-  const high = Math.max(...one.slice(-7, -1).map(x => x.h));
+  const avgVolume =
+    one.slice(-21, -1).reduce(
+      (sum, x) => sum + x.v,
+      0
+    ) / 20;
+
+  const volumeRatio =
+    b.v / (avgVolume || 1);
+
+  const priorHigh = Math.max(
+    ...one.slice(-7, -1).map(x => x.h)
+  );
+
   const strength = rsi(c1);
 
-  const trend5 =
-    e5fast > e5slow &&
-    c5.at(-1) > e5slow;
+  const checks = {
+    trend5:
+      ema9m5 > ema21m5 &&
+      c5.at(-1) > ema21m5,
 
-  const trend1 =
-    e9 > e21 &&
-    b.c > e9;
+    trend1:
+      ema9m1 > ema21m1 &&
+      b.c > ema9m1,
 
-  const breakout =
-    b.c > b.o &&
-    b.c > one.at(-2).c &&
-    b.c > high;
+    breakout:
+      b.c > b.o &&
+      b.c > previous.c &&
+      b.c > priorHigh,
 
-  const volumeOK = volumeRatio >= 1.10;
-  const rsiOK = strength >= 52 && strength <= 76;
+    volume:
+      volumeRatio >= 1.10,
 
-  const fresh = Date.now() - b.end >= 0 &&
-    Date.now() - b.end < 90000;
+    rsi:
+      strength >= 52 &&
+      strength <= 76
+  };
 
   const score =
-    (trend5 ? 30 : 0) +
-    (trend1 ? 25 : 0) +
-    (breakout ? 25 : 0) +
-    (volumeOK ? 10 : 0) +
-    (rsiOK ? 10 : 0);
+    (checks.trend5 ? 30 : 0) +
+    (checks.trend1 ? 25 : 0) +
+    (checks.breakout ? 25 : 0) +
+    (checks.volume ? 10 : 0) +
+    (checks.rsi ? 10 : 0);
+
+  const age = Date.now() - b.end;
+
+  const fresh =
+    age >= 0 &&
+    age <= SIGNAL_MAX_AGE;
 
   const approved =
-    trend5 && trend1 && breakout &&
-    volumeOK && rsiOK && fresh;
+    Object.values(checks).every(Boolean) &&
+    fresh;
+
+  const missing = [];
+
+  if (!checks.trend5) {
+    missing.push('tendencia 5m');
+  }
+
+  if (!checks.trend1) {
+    missing.push('tendencia 1m');
+  }
+
+  if (!checks.breakout) {
+    missing.push('rompimento 1m');
+  }
+
+  if (!checks.volume) {
+    missing.push('volume');
+  }
+
+  if (!checks.rsi) {
+    missing.push('RSI');
+  }
+
+  if (!fresh) {
+    missing.push('sinal antigo');
+  }
 
   return {
     approved,
     score,
     why: approved
-      ? 'Scalping aprovado'
-      : 'Aguardando tendencia, rompimento, volume e RSI',
+      ? 'TODOS OS FILTROS APROVADOS'
+      : 'Falta: ' + missing.join(', '),
     setup: 'scalping-1m-5m',
     signalTime: b.t,
     signalCloseTime: b.end,
+    signalAgeMs: age,
+    checks,
     rsi: round(strength),
     volumeRatio: round(volumeRatio),
-    trendConfirmed: trend5 && trend1
+    trendConfirmed:
+      checks.trend5 && checks.trend1,
+    timing1: checks.breakout,
+    breakout5: checks.breakout
   };
 }
 
 async function universe() {
-  const [ex, volumes, books] = await Promise.all([
-    binance('exchangeInfo'),
-    binance('ticker/24hr'),
-    binance('ticker/bookTicker')
-  ]);
+  const [exchange, volumes, books] =
+    await Promise.all([
+      binance('exchangeInfo'),
+      binance('ticker/24hr'),
+      binance('ticker/bookTicker')
+    ]);
 
   const allowed = new Set(
-    ex.symbols.filter(x =>
-      x.status === 'TRADING' &&
-      x.quoteAsset === 'USDT' &&
-      x.isSpotTradingAllowed !== false
-    ).map(x => x.symbol)
+    exchange.symbols
+      .filter(x =>
+        x.status === 'TRADING' &&
+        x.quoteAsset === 'USDT' &&
+        x.isSpotTradingAllowed !== false
+      )
+      .map(x => x.symbol)
   );
 
-  const vol = new Map(
-    volumes.map(x => [x.symbol, +x.quoteVolume])
+  const volMap = new Map(
+    volumes.map(x => [
+      x.symbol,
+      Number(x.quoteVolume)
+    ])
   );
 
-  const quotes = new Map(
+  const bookMap = new Map(
     books.map(x => [
       x.symbol,
-      { ask: +x.askPrice, bid: +x.bidPrice }
+      {
+        ask: Number(x.askPrice),
+        bid: Number(x.bidPrice)
+      }
     ])
   );
 
   return ASSETS.map(sym => {
     const key = sym + 'USDT';
-    const quote = quotes.get(key);
+    const quote = bookMap.get(key);
 
-    const spread = quote?.ask > 0 && quote?.bid > 0
-      ? 100 * (quote.ask - quote.bid) /
-        ((quote.ask + quote.bid) / 2)
-      : Infinity;
+    const spread =
+      quote?.ask > 0 &&
+      quote?.bid > 0
+        ? 100 *
+          (quote.ask - quote.bid) /
+          ((quote.ask + quote.bid) / 2)
+        : Infinity;
 
     return {
       sym,
       quote,
       spread,
-      eligible: allowed.has(key) &&
-        (vol.get(key) || 0) >= 5000000 &&
+      eligible:
+        allowed.has(key) &&
+        (volMap.get(key) || 0) >=
+          5000000 &&
         spread <= 0.08
     };
   });
@@ -414,12 +597,26 @@ async function universe() {
 
 async function closePosition(p) {
   const quote = await book(p.sym);
+
   p.mark = quote.bid;
 
   const exit = quote.bid * (1 - SLIP);
-  const proceeds = p.qty * exit * (1 - FEE);
+
+  const proceeds =
+    p.qty * exit * (1 - FEE);
+
   const net = proceeds - p.cost;
-  const age = Date.now() - (p.openedMs || Date.now());
+
+  const openedAtMs =
+    Number.isFinite(p.openedMs)
+      ? p.openedMs
+      : Date.parse(p.openedAt);
+
+  const age =
+    Date.now() -
+    (Number.isFinite(openedAtMs)
+      ? openedAtMs
+      : Date.now());
 
   let reason = null;
 
@@ -432,22 +629,32 @@ async function closePosition(p) {
       reason = 'TEMPO_12M';
     }
   } else {
-    // Preserva o tratamento das posicoes antigas.
     const stop = p.stopPrice ||
-      p.entry * (1 - st.settings.stopPct / 100);
+      p.entry *
+      (1 - st.settings.stopPct / 100);
 
     const target = p.targetPrice ||
-      p.entry * (1 + st.settings.targetPct / 100);
+      p.entry *
+      (1 + st.settings.targetPct / 100);
 
-    if (quote.bid <= stop) reason = 'STOP_ANTIGO';
-    else if (quote.bid >= target) reason = 'ALVO_ANTIGO';
-    else if (age >= 48 * 3600000) reason = 'TEMPO_48H';
+    if (quote.bid <= stop) {
+      reason = 'STOP_ANTIGO';
+    } else if (quote.bid >= target) {
+      reason = 'ALVO_ANTIGO';
+    } else if (age >= 48 * 3600000) {
+      reason = 'TEMPO_48H';
+    }
   }
 
-  if (!reason) return;
+  if (!reason) {
+    return;
+  }
 
   st.cash += proceeds;
-  st.positions = st.positions.filter(x => x !== p);
+
+  st.positions = st.positions.filter(
+    x => x !== p
+  );
 
   st.trades.unshift({
     symbol: p.sym,
@@ -464,8 +671,10 @@ async function closePosition(p) {
   st.trades = st.trades.slice(0, 500);
 
   log(
-    'VENDA FICTICIA ' + p.sym + ' ' +
-    round(net) + ' USDT - ' + reason,
+    'VENDA FICTICIA ' +
+    p.sym + ': ' +
+    round(net) + ' USDT (' +
+    reason + ')',
     net >= 0 ? 'profit' : 'loss'
   );
 }
@@ -475,7 +684,11 @@ async function monitor() {
     try {
       await closePosition(p);
     } catch (error) {
-      st.lastError = 'Monitor: ' + error.message;
+      st.lastError =
+        'Monitor ' +
+        p.sym + ': ' +
+        error.message;
+
       log(st.lastError, 'warning');
     }
   }
@@ -483,49 +696,60 @@ async function monitor() {
 
 async function scan() {
   st.lastAttempt = now();
-  st.diagnostic = 'Procurando oportunidades de scalping';
+  st.diagnostic =
+    'Analisando oportunidades 1m/5m';
 
   const assets = await universe();
   const results = [];
 
-  for (let i = 0; i < assets.length; i += 5) {
+  for (
+    let i = 0;
+    i < assets.length;
+    i += 5
+  ) {
     const group = assets.slice(i, i + 5);
 
     const settled = await Promise.allSettled(
-      group.map(async a => {
-        if (!a.eligible) {
+      group.map(async asset => {
+        if (!asset.eligible) {
           return {
-            sym: a.sym,
+            sym: asset.sym,
             approved: false,
             score: 0,
-            why: 'Liquidez ou spread'
+            why: 'Liquidez ou spread',
+            checks: {}
           };
         }
 
         const [one, five] = await Promise.all([
-          candles(a.sym, '1m'),
-          candles(a.sym, '5m')
+          candles(asset.sym, '1m'),
+          candles(asset.sym, '5m')
         ]);
 
         return {
-          sym: a.sym,
-          ask: a.quote.ask,
-          spread: a.spread,
+          sym: asset.sym,
+          ask: asset.quote.ask,
+          spread: asset.spread,
           ...analyze(one, five)
         };
       })
     );
 
-    group.forEach((a, j) => {
+    group.forEach((asset, j) => {
       results.push(
         settled[j].status === 'fulfilled'
           ? settled[j].value
           : {
-              sym: a.sym,
+              sym: asset.sym,
               approved: false,
               score: 0,
-              why: 'Erro: ' +
-                String(settled[j].reason?.message || 'desconhecido')
+              why:
+                'ERRO: ' +
+                String(
+                  settled[j].reason?.message ||
+                  'desconhecido'
+                ),
+              checks: {}
             }
       );
     });
@@ -534,43 +758,93 @@ async function scan() {
   st.lastResults = results;
   st.lastScan = now();
 
-  const candidates = results
-    .filter(x =>
-      x.approved &&
-      st.usedSignals[x.sym] !== x.signalTime
+  st.stats.scans++;
+
+  const approved = results
+    .filter(x => x.approved)
+    .sort((a, b) =>
+      b.score - a.score ||
+      a.spread - b.spread
+    );
+
+  const candidates = approved.filter(x =>
+    st.usedSignals[x.sym] !== x.signalTime
+  );
+
+  st.stats.signals += approved.length;
+  st.stats.rejected +=
+    results.length - approved.length;
+
+  const best = [...results]
+    .sort((a, b) =>
+      (b.score || 0) -
+      (a.score || 0)
     )
-    .sort((a, b) => b.score - a.score ||
-      a.spread - b.spread);
+    .slice(0, 3);
+
+  const leaders = best.map(x =>
+    x.sym + ':' + (x.score || 0)
+  ).join(' | ');
 
   st.diagnostic =
-    candidates.length + ' oportunidades / ' +
-    results.length + ' moedas';
+    candidates.length +
+    ' oportunidades / 20 moedas' +
+    ' | Destaques: ' +
+    leaders;
 
-  log('ANALISE SCALPING: ' + st.diagnostic, 'scan');
+  // Manter diagnostico completo por moeda,
+  // sem liberar entradas reprovadas.
+  if (approved.length) {
+    log(
+      'SINAIS APROVADOS: ' +
+      approved.map(x => x.sym).join(', '),
+      'scan'
+    );
+  } else {
+    log(
+      'ANALISE 1M: ' + st.diagnostic,
+      'scan'
+    );
+  }
 
-  if (!candidates.length || blocking()) return;
+  if (!candidates.length || blocking()) {
+    return;
+  }
 
   for (const pick of candidates) {
     try {
-      const quote = await book(pick.sym);
-
-      if (quote.ask > pick.ask * 1.001) continue;
-
-      if (Date.now() - pick.signalCloseTime > 90000) {
+      if (
+        st.usedSignals[pick.sym] ===
+        pick.signalTime
+      ) {
         continue;
       }
 
-      if (st.usedSignals[pick.sym] === pick.signalTime) {
+      if (
+        Date.now() -
+        pick.signalCloseTime >
+        SIGNAL_MAX_AGE
+      ) {
+        continue;
+      }
+
+      const quote = await book(pick.sym);
+
+      if (quote.ask > pick.ask * 1.001) {
         continue;
       }
 
       const stake = 50;
-      const entry = quote.ask * (1 + SLIP);
+
+      const entry =
+        quote.ask * (1 + SLIP);
+
       const qty = stake / entry;
       const cost = stake * (1 + FEE);
 
       if (st.cash < cost) {
-        st.diagnostic = 'Saldo insuficiente';
+        st.diagnostic =
+          'Saldo ficticio insuficiente';
         return;
       }
 
@@ -591,23 +865,34 @@ async function scan() {
         score: pick.score
       });
 
-      st.usedSignals[pick.sym] = pick.signalTime;
+      st.usedSignals[pick.sym] =
+        pick.signalTime;
+
       st.openedToday++;
 
       st.diagnostic =
-        'COMPRA FICTICIA ' + pick.sym + ' - 50 USDT';
+        'COMPRA FICTICIA ' +
+        pick.sym + ' - 50 USDT';
 
       log(st.diagnostic, 'buy');
+
       return;
     } catch (error) {
       st.lastError = error.message;
-      log('Entrada recusada: ' + error.message, 'warning');
+
+      log(
+        'Entrada recusada: ' +
+        error.message,
+        'warning'
+      );
     }
   }
 }
 
 async function cycle() {
-  if (!ready || busy) return;
+  if (!ready || busy) {
+    return;
+  }
 
   busy = true;
 
@@ -627,14 +912,20 @@ async function cycle() {
     const old = await legacy();
 
     if (old) {
-      st.diagnostic = 'Desligue primeiro: ' + old;
+      st.diagnostic =
+        'BLOQUEADO: desligue ' + old;
       await save();
       return;
     }
 
-    if (Date.now() - st.lastScanMs >= SCAN_MS) {
+    if (
+      Date.now() - st.lastScanMs >= SCAN_MS
+    ) {
       st.lastScanMs = Date.now();
-      st.lastSlot = Math.floor(Date.now() / SCAN_MS);
+
+      st.lastSlot = Math.floor(
+        Date.now() / SCAN_MS
+      );
 
       await scan();
     }
@@ -642,7 +933,9 @@ async function cycle() {
     await save();
   } catch (error) {
     st.lastError = error.message;
-    st.diagnostic = 'ERRO: ' + error.message;
+    st.diagnostic =
+      'ERRO: ' + error.message;
+
     log(st.diagnostic, 'warning');
 
     try {
@@ -666,8 +959,10 @@ function state() {
     working: busy,
     simulation: true,
     realOrders: false,
-    storage: 'Arquivo temporario no Render',
-    system: 'Agente Quant V5 - Scalping',
+    storage:
+      'Arquivo temporario no Render',
+    system:
+      'Agente Quant V5.1 - Diagnostico',
     scanInterval: '1m',
     monitorInterval: '5s',
     strategyTimeframe: '1m + 5m',
@@ -678,67 +973,105 @@ function state() {
 
 function reply(res, status, data) {
   res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Type':
+      'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff'
   });
+
   res.end(JSON.stringify(data));
 }
 
-function pinValid(pin) {
-  const secret = process.env.QUANT_ACCESS_PIN || '';
+function valid(pin) {
+  const secret =
+    process.env.QUANT_ACCESS_PIN || '';
 
-  if (!secret || typeof pin !== 'string') return false;
+  if (
+    !secret ||
+    typeof pin !== 'string'
+  ) {
+    return false;
+  }
 
   const a = Buffer.from(secret);
   const b = Buffer.from(pin);
 
-  return a.length === b.length &&
-    crypto.timingSafeEqual(a, b);
+  return (
+    a.length === b.length &&
+    crypto.timingSafeEqual(a, b)
+  );
 }
 
-async function readBody(req) {
+async function body(req) {
   let text = '';
 
   for await (const chunk of req) {
     text += chunk;
-    if (text.length > 2048) throw Error('Payload extenso');
+
+    if (text.length > 2048) {
+      throw Error('Payload extenso');
+    }
   }
 
   return text ? JSON.parse(text) : {};
 }
 
 async function handle(req, res, url) {
-  if (!url.pathname.startsWith('/api/quant-unified/')) {
+  if (
+    !url.pathname.startsWith(
+      '/api/quant-unified/'
+    )
+  ) {
     return false;
   }
 
-  if (!pinValid(req.headers['x-quant-pin'])) {
-    reply(res, 401, { error: 'PIN invalido' });
+  if (
+    !valid(req.headers['x-quant-pin'])
+  ) {
+    reply(res, 401, {
+      error: 'PIN invalido'
+    });
+
     return true;
   }
 
   if (!ready) {
-    reply(res, 503, { error: 'Motor inicializando' });
+    reply(res, 503, {
+      error: 'Motor inicializando'
+    });
+
     return true;
   }
 
   try {
-    if (req.method === 'GET' &&
-        url.pathname === '/api/quant-unified/status') {
+    if (
+      req.method === 'GET' &&
+      url.pathname ===
+        '/api/quant-unified/status'
+    ) {
       reply(res, 200, state());
       return true;
     }
 
     if (req.method !== 'POST') {
-      reply(res, 405, { error: 'Metodo invalido' });
+      reply(res, 405, {
+        error: 'Metodo invalido'
+      });
+
       return true;
     }
 
-    const data = await readBody(req);
+    const data = await body(req);
 
-    if (url.pathname === '/api/quant-unified/config') {
-      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(data.start)) {
+    if (
+      url.pathname ===
+      '/api/quant-unified/config'
+    ) {
+      if (
+        !/^([01]\d|2[0-3]):[0-5]\d$/.test(
+          data.start
+        )
+      ) {
         throw Error('Horario invalido');
       }
 
@@ -746,46 +1079,73 @@ async function handle(req, res, url) {
       st.settings.goal = 30;
       st.settings.lossLimit = 20;
       st.settings.maxLosses = 3;
+      st.settings.maxPositions = 1;
       st.settings.start = data.start;
 
-      log('Parametros V5 salvos');
+      log('Parametros V5.1 salvos');
+
       await save();
 
       reply(res, 200, state());
       return true;
     }
 
-    if (url.pathname === '/api/quant-unified/switch') {
-      if (typeof data.enabled !== 'boolean') {
+    if (
+      url.pathname ===
+      '/api/quant-unified/switch'
+    ) {
+      if (
+        typeof data.enabled !== 'boolean'
+      ) {
         throw Error('Comando invalido');
       }
 
       if (data.enabled) {
         const old = await legacy();
-        if (old) throw Error('Desligue ' + old);
+
+        if (old) {
+          throw Error(
+            'Desligue ' + old
+          );
+        }
       }
 
       st.settings.enabled = data.enabled;
 
-      if (data.enabled) st.lastScanMs = 0;
+      if (data.enabled) {
+        st.lastScanMs = 0;
+      }
 
-      log(data.enabled
-        ? 'SCALPING V5 ATIVADO'
-        : 'SCALPING V5 DESLIGADO');
+      log(
+        data.enabled
+          ? 'SCALPING V5.1 ATIVADO'
+          : 'SCALPING V5.1 DESLIGADO'
+      );
 
       await save();
+
       reply(res, 200, state());
 
       if (data.enabled) {
-        queueMicrotask(() => cycle().catch(() => {}));
+        queueMicrotask(() =>
+          cycle().catch(() => {})
+        );
       }
 
       return true;
     }
 
-    if (url.pathname === '/api/quant-unified/test-trade') {
-      if (busy || st.positions.length) {
-        throw Error('Motor ocupado ou posicao aberta');
+    if (
+      url.pathname ===
+      '/api/quant-unified/test-trade'
+    ) {
+      if (
+        busy ||
+        st.positions.length
+      ) {
+        throw Error(
+          'Motor ocupado ou posicao aberta'
+        );
       }
 
       const sym = ASSETS.includes(data.symbol)
@@ -796,11 +1156,18 @@ async function handle(req, res, url) {
       const second = await book(sym);
 
       const stake = 50;
-      const entry = first.ask * (1 + SLIP);
+      const entry =
+        first.ask * (1 + SLIP);
+
       const qty = stake / entry;
       const cost = stake * (1 + FEE);
-      const exit = second.bid * (1 - SLIP);
-      const net = qty * exit * (1 - FEE) - cost;
+
+      const exit =
+        second.bid * (1 - SLIP);
+
+      const net =
+        qty * exit * (1 - FEE) -
+        cost;
 
       const test = {
         symbol: sym,
@@ -816,21 +1183,37 @@ async function handle(req, res, url) {
       };
 
       st.testTrades.unshift(test);
-      st.testTrades = st.testTrades.slice(0, 30);
 
-      log('TESTE ISOLADO ' + sym + ' ' +
-        round(net) + ' USDT');
+      st.testTrades =
+        st.testTrades.slice(0, 30);
+
+      log(
+        'TESTE ISOLADO ' +
+        sym + ' ' +
+        round(net) + ' USDT'
+      );
 
       await save();
 
-      reply(res, 200, { ...state(), test });
+      reply(res, 200, {
+        ...state(),
+        test
+      });
+
       return true;
     }
 
-    reply(res, 404, { error: 'Rota inexistente' });
+    reply(res, 404, {
+      error: 'Rota inexistente'
+    });
+
     return true;
+
   } catch (error) {
-    reply(res, 400, { error: error.message });
+    reply(res, 400, {
+      error: error.message
+    });
+
     return true;
   }
 }
@@ -839,18 +1222,32 @@ function start() {
   load()
     .then(() => {
       const timer = setInterval(
-        () => cycle().catch(error =>
-          console.error('QUANT_V5', error.message)),
+        () =>
+          cycle().catch(error =>
+            console.error(
+              'QUANT_V5_1',
+              error.message
+            )
+          ),
         MONITOR_MS
       );
 
       timer.unref?.();
 
-      log('V5 pronto: entrada 50, meta 30, ' +
-        'analise 1m, monitor 5s');
+      log(
+        'V5.1 pronto: diagnostico completo, ' +
+        'entrada 50, meta 30'
+      );
     })
     .catch(error =>
-      console.error('QUANT_V5_INIT', error.message));
+      console.error(
+        'QUANT_V5_1_INIT',
+        error.message
+      )
+    );
 }
 
-module.exports = { handle, start };
+module.exports = {
+  handle,
+  start
+};
