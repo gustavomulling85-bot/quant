@@ -107,8 +107,241 @@ $('update').onclick=()=>withBusy(async()=>{const n=await refresh();msg(n?'Aviso:
 ASSETS.forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s+'/USDT';$('asset').append(o)});const daily=$('diario').querySelector('details');daily.addEventListener('toggle',()=>{if(daily.open){const f=daily.querySelector('iframe');if(!f.src)f.src=f.dataset.src}});render();showRows();drawSelected();
 })();
 
+
 </script>
 <script src="quant-auto-ui.js" defer></script>
 <script src="quant-scalp-ui.js" defer></script>
+<script>
+(() => {
+  'use strict';
+
+  const $ = id => document.getElementById(id);
+
+  const section = document.createElement('section');
+  section.id = 'central-operacoes';
+
+  section.innerHTML = `
+    <h2>📊 Central de Operações — Resultado dos Robôs</h2>
+    <p class="mut">
+      Compras, vendas, ganhos e perdas das duas
+      estratégias. Somente dinheiro fictício.
+    </p>
+    <div id="coResumo" class="grid"></div>
+    <h2>🟡 Compras em andamento</h2>
+    <div id="coAbertas" class="tile"></div>
+    <h2 style="margin-top:16px">🟢 Ganhos e 🔴 Perdas</h2>
+    <div id="coFechadas" class="tile"></div>
+    <p id="coMensagem" class="mut">
+      Informe o PIN na seção TinyFish.
+    </p>
+    <button id="coAtualizar" class="secondary">
+      Atualizar operações
+    </button>
+    <p class="mut tight">
+      Atualização automática a cada 15 segundos.
+      Resultados líquidos simulados, sujeitos às
+      limitações de preços, taxas e armazenamento.
+    </p>
+  `;
+
+  const anchor = $('radar');
+  if (!anchor) return;
+
+  anchor.before(section);
+
+  const nav = document.querySelector('.nav');
+  if (nav) {
+    const link = document.createElement('a');
+    link.href = '#central-operacoes';
+    link.textContent = 'Operações';
+    nav.prepend(link);
+  }
+
+  function add(parent, tag, value, cls = '') {
+    const element = document.createElement(tag);
+    element.textContent = value;
+    if (cls) element.className = cls;
+    parent.append(element);
+    return element;
+  }
+
+  function money(value) {
+    return Number(value || 0).toLocaleString('pt-BR', {
+      minimumFractionDigits: 4,
+      maximumFractionDigits: 4
+    }) + ' USDT';
+  }
+
+  async function status(endpoint, pin) {
+    const response = await fetch(endpoint, {
+      headers: { 'X-Quant-Pin': pin },
+      cache: 'no-store'
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'HTTP ' + response.status);
+    }
+
+    return data;
+  }
+
+  let loading = false;
+
+  async function atualizar() {
+    if (loading) return;
+
+    const pin = $('pin')?.value;
+    if (!pin) {
+      $('coMensagem').textContent =
+        'Digite seu PIN na seção TinyFish.';
+      return;
+    }
+
+    loading = true;
+
+    try {
+      const [auto, scalp] = await Promise.all([
+        status('/api/quant-auto/status', pin),
+        status('/api/quant-scalp/status', pin)
+      ]);
+
+      const resumo = $('coResumo');
+      const abertas = $('coAbertas');
+      const fechadas = $('coFechadas');
+
+      resumo.replaceChildren();
+      abertas.replaceChildren();
+      fechadas.replaceChildren();
+
+      const tradesAuto = (auto.trades || []).map(t => ({
+        ...t,
+        robo: '5 minutos'
+      }));
+
+      const tradesScalp = (scalp.trades || []).map(t => ({
+        ...t,
+        robo: 'Scalping 1 minuto'
+      }));
+
+      const trades = [...tradesAuto, ...tradesScalp]
+        .sort((a, b) =>
+          Date.parse(b.closedAt) - Date.parse(a.closedAt)
+        );
+
+      const lucros = trades
+        .filter(t => Number(t.net) > 0)
+        .reduce((s, t) => s + Number(t.net), 0);
+
+      const perdas = trades
+        .filter(t => Number(t.net) < 0)
+        .reduce((s, t) => s + Number(t.net), 0);
+
+      const cards = [
+        ['Robô 5m hoje', money(auto.netToday)],
+        ['Scalping hoje', money(scalp.netToday)],
+        ['Resultado diário combinado',
+          money(Number(auto.netToday) + Number(scalp.netToday))],
+        ['Losses hoje',
+          (auto.lossesToday || 0) +
+          (scalp.lossesToday || 0)],
+        ['Operações encerradas', trades.length],
+        ['Ganhos registrados', money(lucros)],
+        ['Perdas registradas', money(perdas)]
+      ];
+
+      for (const [label, value] of cards) {
+        const card = add(resumo, 'div', '', 'tile');
+        add(card, 'small', label);
+        add(card, 'strong', String(value));
+      }
+
+      const positions = [
+        ...(auto.positions || []).map(p => ({
+          ...p, robo: '5 minutos'
+        })),
+        ...(scalp.position ? [{
+          ...scalp.position,
+          robo: 'Scalping 1 minuto'
+        }] : [])
+      ];
+
+      if (!positions.length) {
+        add(abertas, 'p', 'Nenhuma compra aberta.');
+      }
+
+      for (const p of positions) {
+        const sym = p.sym || p.symbol || 'Ativo';
+        const invested = Number(p.cost || 0);
+        const mark = Number(p.mark || p.entry || 0);
+        const qty = Number(p.qty || 0);
+        const estimated = qty * mark * 0.999 - invested;
+
+        const card = add(abertas, 'div', '', 'item');
+
+        add(card, 'b', p.robo + ' • ' + sym);
+        add(card, 'small',
+          'Entrada: ' + Number(p.entry).toFixed(6)
+        );
+        add(card, 'small',
+          'Preço atual registrado: ' + mark.toFixed(6)
+        );
+        add(card, 'small',
+          'Resultado estimado: ' + money(estimated),
+          estimated >= 0 ? 'ok' : 'bad'
+        );
+      }
+
+      if (!trades.length) {
+        add(fechadas, 'p',
+          'Nenhuma venda concluída ainda.'
+        );
+      }
+
+      for (const t of trades.slice(0, 50)) {
+        const net = Number(t.net || 0);
+        const sym = t.symbol || t.sym || 'Ativo';
+
+        const card = add(fechadas, 'div', '', 'item');
+
+        add(card, 'b',
+          (net >= 0 ? '🟢 GANHO ' : '🔴 PERDA ') +
+          money(net),
+          net >= 0 ? 'ok' : 'bad'
+        );
+
+        add(card, 'small', t.robo + ' • ' + sym);
+
+        add(card, 'small',
+          'Compra: ' + Number(t.entry).toFixed(6) +
+          ' | Venda: ' + Number(t.exit).toFixed(6)
+        );
+
+        add(card, 'small',
+          new Date(t.closedAt).toLocaleString('pt-BR') +
+          ' • ' + (t.reason || 'Encerrada')
+        );
+      }
+
+      $('coMensagem').textContent =
+        'Atualizado às ' +
+        new Date().toLocaleTimeString('pt-BR') +
+        '. Carteiras separadas; valores combinados apenas no resumo.';
+
+    } catch (error) {
+      $('coMensagem').textContent =
+        'Erro ao consultar operações: ' + error.message;
+    } finally {
+      loading = false;
+    }
+  }
+
+  $('coAtualizar').onclick = atualizar;
+  setInterval(atualizar, 15000);
+  atualizar();
+})();
+</script>
 </body></html>
+
 
