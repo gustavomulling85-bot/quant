@@ -1,0 +1,324 @@
+
+name: Quant - Instalar Persistencia Supabase
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  instalar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar projeto
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Integrar Supabase sem alterar estrategia
+        shell: bash
+        run: |
+          cat > instalar-persistencia.cjs <<'NODE'
+          const fs = require('fs');
+
+          const file = 'quant-unified-bot.js';
+          let code = fs.readFileSync(file, 'utf8');
+
+          if (code.includes('QUANT_SUPABASE_PERSISTENCE_V1')) {
+            console.log('Persistencia ja instalada.');
+            process.exit(0);
+          }
+
+          function replaceOnce(before, after, label) {
+            if (!code.includes(before)) {
+              throw Error('Trecho nao encontrado: ' + label);
+            }
+            code = code.replace(before, after);
+          }
+
+          const dbCode = `
+          // QUANT_SUPABASE_PERSISTENCE_V1
+          const Q_URL = (process.env.SUPABASE_URL || '')
+            .replace(/\\/$/, '');
+          const Q_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+          let qDatabaseReady = false;
+
+          async function qRequest(method, route, payload) {
+            if (!Q_URL || !Q_KEY) {
+              throw Error('Variaveis Supabase ausentes');
+            }
+
+            const controller = new AbortController();
+            const timer = setTimeout(
+              () => controller.abort(), 12000
+            );
+
+            try {
+              const response = await fetch(
+                Q_URL + '/rest/v1/' + route,
+                {
+                  method,
+                  signal: controller.signal,
+                  headers: {
+                    apikey: Q_KEY,
+                    Authorization: 'Bearer ' + Q_KEY,
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    Prefer: 'resolution=merge-duplicates,return=minimal'
+                  },
+                  ...(payload === undefined
+                    ? {}
+                    : {body: JSON.stringify(payload)})
+                }
+              );
+
+              const body = await response.text();
+
+              if (!response.ok) {
+                throw Error(
+                  'Supabase HTTP ' + response.status +
+                  ': ' + body.slice(0, 200)
+                );
+              }
+
+              return body ? JSON.parse(body) : null;
+            } finally {
+              clearTimeout(timer);
+            }
+          }
+
+          async function qRestore() {
+            const rows = await qRequest(
+              'GET',
+              'quant_runtime?select=state&id=eq.principal&limit=1'
+            );
+            return rows?.[0]?.state || null;
+          }
+
+          async function qPersist(snapshot) {
+            await qRequest(
+              'POST',
+              'quant_runtime?on_conflict=id',
+              [{
+                id: 'principal',
+                state: snapshot,
+                updated_at: new Date().toISOString()
+              }]
+            );
+          }
+          `;
+
+          replaceOnce(
+            "const FILE = path.join(__dirname, 'quant-unified-state.json');",
+            "const FILE = path.join(__dirname, 'quant-unified-state.json');\n" +
+            dbCode,
+            'inicializacao'
+          );
+
+          const saveStart = code.indexOf('function save() {');
+          const saveEnd = code.indexOf('\nfunction newDay()', saveStart);
+
+          if (saveStart < 0 || saveEnd < 0) {
+            throw Error('Funcao save nao encontrada');
+          }
+
+          const newSave = `
+          function save() {
+            const snapshot = JSON.parse(JSON.stringify(st));
+
+            saveQueue = saveQueue
+              .catch(e => {
+                console.error('QUANT_PREVIOUS_SAVE', e.message);
+              })
+              .then(async () => {
+                if (!qDatabaseReady) {
+                  throw Error('Supabase nao validado');
+                }
+
+                try {
+                  await qPersist(snapshot);
+                } catch (e) {
+                  qDatabaseReady = false;
+                  st.settings.enabled = false;
+                  throw e;
+                }
+
+                try {
+                  const tmp = FILE + '.tmp';
+                  await fs.writeFile(
+                    tmp,
+                    JSON.stringify(snapshot),
+                    {mode: 0o600}
+                  );
+                  await fs.rename(tmp, FILE);
+                } catch (e) {
+                  console.error('QUANT_CACHE', e.message);
+                }
+              });
+
+            return saveQueue;
+          }
+          `;
+
+          code =
+            code.slice(0, saveStart) +
+            newSave +
+            code.slice(saveEnd);
+
+          const loadStart = code.indexOf('async function load() {');
+          const loadEnd = code.indexOf(
+            '\nasync function legacy()', loadStart
+          );
+
+          if (loadStart < 0 || loadEnd < 0) {
+            throw Error('Funcao load nao encontrada');
+          }
+
+          const newLoad = `
+          async function load() {
+            try {
+              let old = await qRestore();
+
+              if (!old) {
+                try {
+                  old = JSON.parse(
+                    await fs.readFile(FILE, 'utf8')
+                  );
+                } catch {
+                  old = null;
+                }
+              }
+
+              if (old) {
+                if (
+                  !Number.isFinite(old.cash) ||
+                  !Array.isArray(old.positions) ||
+                  !Array.isArray(old.trades)
+                ) {
+                  throw Error('Carteira armazenada invalida');
+                }
+
+                st = {
+                  ...blank(),
+                  ...old,
+                  settings: {
+                    ...DEFAULT,
+                    ...old.settings,
+                    enabled: false,
+                    stake: 50,
+                    goal: 30,
+                    lossLimit: 20,
+                    maxLosses: 3,
+                    maxPositions: 1
+                  },
+                  usedSignals: old.usedSignals || {},
+                  cooldowns: old.cooldowns || {},
+                  stats: old.stats || {
+                    scans: 0,
+                    signals: 0,
+                    rejected: 0
+                  },
+                  lastScanMs: 0
+                };
+
+                log(
+                  'Carteira recuperada; ativacao manual necessaria'
+                );
+              } else {
+                st = blank();
+                log('Carteira inicial: 1000 USDT');
+              }
+
+              qDatabaseReady = true;
+              newDay();
+              await save();
+              ready = true;
+              log('Persistencia Supabase conectada');
+
+            } catch (e) {
+              ready = false;
+              qDatabaseReady = false;
+              st.settings.enabled = false;
+              st.diagnostic =
+                'ERRO DE PERSISTENCIA: ' + e.message;
+
+              console.error(
+                'QUANT_SUPABASE_STARTUP',
+                e.message
+              );
+            }
+          }
+          `;
+
+          code =
+            code.slice(0, loadStart) +
+            newLoad +
+            code.slice(loadEnd);
+
+          replaceOnce(
+            '    newDay();\n    await monitor();',
+            `    newDay();
+              if (!qDatabaseReady) {
+                throw Error('Supabase indisponivel');
+              }
+              await monitor();
+              await save();`,
+            'monitoramento'
+          );
+
+          replaceOnce(
+            '      st.cash-=cost;',
+            `      await save();
+                  st.cash-=cost;`,
+            'validacao de compra'
+          );
+
+          replaceOnce(
+            "      log(st.diagnostic,'buy');\n      return;",
+            "      log(st.diagnostic,'buy');\n      await save();\n      return;",
+            'gravacao da compra'
+          );
+
+          replaceOnce(
+            "    ' USDT ('+reason+')',net>=0?'profit':'loss');",
+            "    ' USDT ('+reason+')',net>=0?'profit':'loss');\n  await save();",
+            'gravacao da venda'
+          );
+
+          replaceOnce(
+            "    storage:'Arquivo temporario no Render',",
+            "    storage:'Supabase permanente + cache Render',",
+            'identificacao do armazenamento'
+          );
+
+          fs.writeFileSync(file, code);
+
+          console.log(
+            'Integracao instalada, estrategia V5.2 preservada.'
+          );
+          NODE
+
+          node instalar-persistencia.cjs
+          node --check quant-unified-bot.js
+          rm instalar-persistencia.cjs
+
+      - name: Publicar alteracao no GitHub
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add quant-unified-bot.js
+          if git diff --cached --quiet; then
+            echo "Nenhuma alteracao necessaria."
+          else
+            git commit -m "Persistir carteira Quant V5.2 no Supabase"
+            git push origin HEAD:main
+          fi
