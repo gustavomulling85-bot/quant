@@ -1,0 +1,651 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agente Quant | Laboratorio de Saidas</title>
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:#091525;
+  color:#f0f5ff;
+  font:16px Arial,sans-serif
+}
+main{max-width:960px;margin:auto;padding:18px}
+h1{font-size:26px}
+h2{font-size:20px}
+section{
+  background:#152439;
+  border:1px solid #344b65;
+  border-radius:16px;
+  padding:17px;
+  margin:16px 0
+}
+p{line-height:1.5;color:#bbcae0}
+label{display:block;margin-top:12px}
+select,input{
+  width:100%;
+  padding:13px;
+  margin:7px 0 12px;
+  background:#091525;
+  color:white;
+  border:1px solid #4a6180;
+  border-radius:8px
+}
+button{
+  padding:14px;
+  background:#f5bd12;
+  color:#171717;
+  border:0;
+  border-radius:9px;
+  font-weight:bold;
+  font-size:16px;
+  cursor:pointer
+}
+button:disabled{opacity:.5}
+table{
+  border-collapse:collapse;
+  min-width:650px;
+  width:100%
+}
+td,th{
+  padding:11px 7px;
+  border-bottom:1px solid #394f68;
+  text-align:right;
+  font-size:13px
+}
+td:first-child,th:first-child{text-align:left}
+.scroll{overflow-x:auto}
+.green{color:#4fd9a3}
+.red{color:#ff9393}
+a{color:#90bfff}
+.note{font-size:13px}
+</style>
+</head>
+
+<body>
+<main>
+
+<p>
+<a href="/quant-unificado.html">
+← Voltar ao Agente Quant
+</a>
+</p>
+
+<h1>🧪 Laboratório Quant V1</h1>
+
+<p>
+Compare diferentes estratégias de saída usando
+operações fictícias e dados históricos.
+A carteira principal permanece intocada.
+</p>
+
+<section>
+<h2>Configurar experimento</h2>
+
+<label>Criptomoeda</label>
+<select id="coin">
+<option>BTC</option>
+<option selected>ETH</option>
+<option>SOL</option>
+<option>BNB</option>
+<option>UNI</option>
+<option>NEAR</option>
+<option>ADA</option>
+<option>LINK</option>
+<option>XLM</option>
+<option>AVAX</option>
+<option>XRP</option>
+<option>DOGE</option>
+</select>
+
+<label>Valor por compra fictícia (USDT)</label>
+<input
+  id="stake"
+  type="number"
+  value="50"
+  min="10"
+  max="100"
+  step="10"
+>
+
+<button id="start">
+Executar comparação
+</button>
+
+<p id="status">Laboratório pronto.</p>
+
+<p class="note">
+Usa até 1.000 velas históricas de 1 minuto.
+A lógica de entrada é uma aproximação experimental,
+não uma reprodução exata do executor V5.2.
+Nenhuma operação real é enviada.
+</p>
+</section>
+
+<section>
+<h2>Resultados comparativos</h2>
+<div class="scroll">
+<table>
+<thead>
+<tr>
+<th>Estratégia</th>
+<th>Operações</th>
+<th>Ganhos</th>
+<th>Perdas</th>
+<th>Resultado líquido</th>
+<th>Saldo final</th>
+<th>Bloqueado</th>
+</tr>
+</thead>
+<tbody id="results">
+<tr>
+<td colspan="7">
+Execute o laboratório para visualizar resultados.
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section>
+<h2>Histórico das simulações</h2>
+<div class="scroll">
+<table>
+<thead>
+<tr>
+<th>Modelo</th>
+<th>Duração</th>
+<th>Motivo da venda</th>
+<th>Resultado líquido</th>
+</tr>
+</thead>
+<tbody id="history"></tbody>
+</table>
+</div>
+</section>
+
+<section>
+<h2>Regras do experimento</h2>
+
+<p>
+Cada estratégia começa com 1.000 USDT fictícios,
+com compras de 50 USDT por padrão.
+</p>
+
+<p>
+Comparamos cinco formas de venda:
+3 minutos, 5 minutos, 8 minutos,
+12 minutos e saída dinâmica.
+</p>
+
+<p>
+O alvo é +0,22 USDT líquidos.
+O stop é −0,50 USDT líquidos.
+As contas incluem taxas fictícias de 0,1%
+por lado e deslizamento de 0,02% por lado.
+</p>
+
+<p>
+A estratégia dinâmica pode vender após
+5 minutos quando existe lucro líquido
+e o movimento perde força.
+Caso contrário, mantém a operação
+até o alvo, stop ou 12 minutos.
+</p>
+
+<p>
+Três perdas consecutivas ou prejuízo acumulado
+de 20 USDT bloqueiam novas entradas
+naquela carteira experimental.
+</p>
+
+<p class="note">
+Resultados históricos não garantem lucros futuros.
+O laboratório não reproduz movimentos dentro
+de cada minuto e usa preços de fechamento
+para avaliar as saídas.
+</p>
+</section>
+
+</main>
+
+<script>
+"use strict";
+
+const $ = id => document.getElementById(id);
+
+const FEE = 0.001;
+const SLIP = 0.0002;
+const TARGET_NET = 0.22;
+const STOP_NET = 0.50;
+const INITIAL_BALANCE = 1000;
+
+const MODELS = [
+  3,
+  5,
+  8,
+  12,
+  "Dinâmico"
+];
+
+function money(number) {
+  return Number(number).toFixed(4);
+}
+
+async function loadCandles(symbol) {
+  const hosts = [
+    "https://data-api.binance.vision",
+    "https://api.binance.com"
+  ];
+
+  let lastError;
+
+  for (const host of hosts) {
+    try {
+      const url =
+        host +
+        "/api/v3/klines?symbol=" +
+        encodeURIComponent(symbol + "USDT") +
+        "&interval=1m&limit=1000";
+
+      const controller = new AbortController();
+
+      const timeout = setTimeout(
+        () => controller.abort(),
+        15000
+      );
+
+      let response;
+
+      try {
+        response = await fetch(url, {
+          signal: controller.signal,
+          cache: "no-store"
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          "Binance HTTP " + response.status
+        );
+      }
+
+      const data = await response.json();
+
+      if (!Array.isArray(data)) {
+        throw new Error("Resposta inválida");
+      }
+
+      const candles = data.map(x => ({
+        time: Number(x[0]),
+        open: Number(x[1]),
+        high: Number(x[2]),
+        close: Number(x[4]),
+        volume: Number(x[5])
+      })).filter(x =>
+        x.time + 60000 <= Date.now() &&
+        Number.isFinite(x.close) &&
+        x.close > 0 &&
+        Number.isFinite(x.volume)
+      );
+
+      if (candles.length < 100) {
+        throw new Error("Histórico insuficiente");
+      }
+
+      return candles;
+
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw new Error(
+    "Não foi possível buscar velas: " +
+    (lastError?.message || "erro desconhecido")
+  );
+}
+
+function ema(candles, index, period) {
+  let value =
+    candles[index - period + 1].close;
+
+  const factor = 2 / (period + 1);
+
+  for (
+    let i = index - period + 2;
+    i <= index;
+    i++
+  ) {
+    value =
+      candles[i].close * factor +
+      value * (1 - factor);
+  }
+
+  return value;
+}
+
+function rsi(candles, index) {
+  let gains = 0;
+  let losses = 0;
+
+  for (
+    let i = index - 13;
+    i <= index;
+    i++
+  ) {
+    const difference =
+      candles[i].close -
+      candles[i - 1].close;
+
+    if (difference > 0) {
+      gains += difference;
+    } else {
+      losses -= difference;
+    }
+  }
+
+  if (losses === 0) {
+    return gains > 0 ? 100 : 50;
+  }
+
+  return 100 - 100 / (
+    1 + gains / losses
+  );
+}
+
+function isSignal(candles, index) {
+  if (index < 60) {
+    return false;
+  }
+
+  const volumeAverage =
+    candles.slice(
+      index - 20,
+      index
+    ).reduce(
+      (sum, candle) =>
+        sum + candle.volume,
+      0
+    ) / 20;
+
+  const resistance = Math.max(
+    ...candles.slice(
+      index - 10,
+      index
+    ).map(candle => candle.high)
+  );
+
+  const strength = rsi(
+    candles,
+    index
+  );
+
+  return (
+    ema(candles, index, 9) >
+    ema(candles, index, 21) &&
+
+    ema(candles, index, 21) >
+    ema(candles, index, 55) &&
+
+    candles[index].close >
+    resistance &&
+
+    candles[index].volume >=
+    volumeAverage * 1.25 &&
+
+    strength >= 50 &&
+    strength <= 78
+  );
+}
+
+function simulate(candles, stake, model) {
+  let cash = INITIAL_BALANCE;
+  let consecutiveLosses = 0;
+  let blocked = false;
+
+  const operations = [];
+
+  for (
+    let i = 62;
+    i < candles.length - 1;
+  ) {
+    if (!isSignal(candles, i - 1)) {
+      i++;
+      continue;
+    }
+
+    if (cash < stake) {
+      break;
+    }
+
+    const buyPrice =
+      candles[i].open * (1 + SLIP);
+
+    const quantity =
+      stake * (1 - FEE) / buyPrice;
+
+    cash -= stake;
+
+    let exitIndex = -1;
+    let reason = "";
+    let net = 0;
+
+    for (
+      let j = i;
+      j < candles.length;
+      j++
+    ) {
+      const sellPrice =
+        candles[j].close * (1 - SLIP);
+
+      const proceeds =
+        quantity *
+        sellPrice *
+        (1 - FEE);
+
+      net = proceeds - stake;
+
+      const minutes = j - i + 1;
+
+      const maximum =
+        model === "Dinâmico"
+          ? 12
+          : model;
+
+      reason = "";
+
+      if (net >= TARGET_NET) {
+        reason = "ALVO";
+
+      } else if (net <= -STOP_NET) {
+        reason = "STOP";
+
+      } else if (
+        model === "Dinâmico" &&
+        minutes >= 5 &&
+        net > 0 &&
+        j > i &&
+        candles[j].close <
+        candles[j - 1].close
+      ) {
+        reason = "LUCRO DINÂMICO";
+
+      } else if (
+        minutes >= maximum
+      ) {
+        reason = "TEMPO";
+      }
+
+      if (reason) {
+        exitIndex = j;
+        break;
+      }
+    }
+
+    if (exitIndex === -1) {
+      // Vela insuficiente para fechar:
+      // descarta a operação incompleta.
+      cash += stake;
+      break;
+    }
+
+    cash += stake + net;
+
+    operations.push({
+      minutes: exitIndex - i + 1,
+      reason,
+      net
+    });
+
+    consecutiveLosses =
+      net < 0
+        ? consecutiveLosses + 1
+        : 0;
+
+    i = exitIndex + 1;
+
+    if (
+      consecutiveLosses >= 3 ||
+      cash <= INITIAL_BALANCE - 20
+    ) {
+      blocked = true;
+      break;
+    }
+  }
+
+  return {
+    model,
+    operations,
+    cash,
+    net: cash - INITIAL_BALANCE,
+    blocked
+  };
+}
+
+$("start").onclick = async function () {
+  $("start").disabled = true;
+
+  $("status").textContent =
+    "Buscando histórico de mercado...";
+
+  try {
+    const stake = Number(
+      $("stake").value
+    );
+
+    if (
+      !Number.isFinite(stake) ||
+      stake < 10 ||
+      stake > 100
+    ) {
+      throw new Error(
+        "Entrada entre 10 e 100 USDT."
+      );
+    }
+
+    const coin = $("coin").value;
+
+    const candles = await loadCandles(
+      coin
+    );
+
+    $("status").textContent =
+      "Comparando as cinco estratégias...";
+
+    const results = MODELS.map(
+      model => simulate(
+        candles,
+        stake,
+        model
+      )
+    );
+
+    $("results").innerHTML =
+      results.map(result => {
+        const wins =
+          result.operations.filter(
+            operation => operation.net > 0
+          ).length;
+
+        const losses =
+          result.operations.filter(
+            operation => operation.net < 0
+          ).length;
+
+        const color =
+          result.net >= 0
+            ? "green"
+            : "red";
+
+        return `
+          <tr>
+            <td>${result.model}</td>
+            <td>${result.operations.length}</td>
+            <td>${wins}</td>
+            <td>${losses}</td>
+            <td class="${color}">
+              ${money(result.net)}
+            </td>
+            <td>
+              ${money(result.cash)}
+            </td>
+            <td>
+              ${result.blocked ? "SIM" : "Não"}
+            </td>
+          </tr>
+        `;
+      }).join("");
+
+    $("history").innerHTML =
+      results.flatMap(result =>
+        result.operations.map(operation => {
+          const color =
+            operation.net >= 0
+              ? "green"
+              : "red";
+
+          return `
+            <tr>
+              <td>${result.model}</td>
+              <td>
+                ${operation.minutes} min
+              </td>
+              <td>${operation.reason}</td>
+              <td class="${color}">
+                ${money(operation.net)}
+              </td>
+            </tr>
+          `;
+        })
+      ).join("") ||
+      `<tr>
+        <td colspan="4">
+          Nenhuma entrada encontrada.
+        </td>
+      </tr>`;
+
+    $("status").textContent =
+      "Teste concluído: " +
+      candles.length +
+      " velas analisadas de " +
+      coin +
+      ". Carteira principal preservada.";
+
+  } catch (error) {
+    $("status").textContent =
+      "Erro: " + error.message;
+
+  } finally {
+    $("start").disabled = false;
+  }
+};
+</script>
+</body>
+</html>
