@@ -11,6 +11,78 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const FILE = path.join(__dirname, 'quant-unified-state.json');
+
+// QUANT_SUPABASE_PERSISTENCE_V1
+const Q_URL = (process.env.SUPABASE_URL || '')
+  .replace(/\/$/, '');
+const Q_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+let qDatabaseReady = false;
+
+async function qRequest(method, route, payload) {
+  if (!Q_URL || !Q_KEY) {
+    throw Error('Variaveis Supabase ausentes');
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(), 12000
+  );
+
+  try {
+    const response = await fetch(
+      Q_URL + '/rest/v1/' + route,
+      {
+        method,
+        signal: controller.signal,
+        headers: {
+          apikey: Q_KEY,
+          Authorization: 'Bearer ' + Q_KEY,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Prefer: 'resolution=merge-duplicates,return=minimal'
+        },
+        ...(payload === undefined
+          ? {}
+          : {body: JSON.stringify(payload)})
+      }
+    );
+
+    const body = await response.text();
+
+    if (!response.ok) {
+      throw Error(
+        'Supabase HTTP ' + response.status +
+        ': ' + body.slice(0, 200)
+      );
+    }
+
+    return body ? JSON.parse(body) : null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function qRestore() {
+  const rows = await qRequest(
+    'GET',
+    'quant_runtime?select=state&id=eq.principal&limit=1'
+  );
+  return rows?.[0]?.state || null;
+}
+
+async function qPersist(snapshot) {
+  await qRequest(
+    'POST',
+    'quant_runtime?on_conflict=id',
+    [{
+      id: 'principal',
+      state: snapshot,
+      updated_at: new Date().toISOString()
+    }]
+  );
+}
+
 const ASSETS = [
   'BTC','ETH','SOL','BNB','XRP',
   'LINK','AVAX','ADA','DOGE','SUI',
@@ -117,12 +189,40 @@ function log(text,type='info') {
   st.events=st.events.slice(0,120);
 }
 
+
 function save() {
-  saveQueue=saveQueue.catch(()=>{}).then(async()=>{
-    const tmp=FILE+'.tmp';
-    await fs.writeFile(tmp,JSON.stringify(st),{mode:0o600});
-    await fs.rename(tmp,FILE);
-  });
+  const snapshot = JSON.parse(JSON.stringify(st));
+
+  saveQueue = saveQueue
+    .catch(e => {
+      console.error('QUANT_PREVIOUS_SAVE', e.message);
+    })
+    .then(async () => {
+      if (!qDatabaseReady) {
+        throw Error('Supabase nao validado');
+      }
+
+      try {
+        await qPersist(snapshot);
+      } catch (e) {
+        qDatabaseReady = false;
+        st.settings.enabled = false;
+        throw e;
+      }
+
+      try {
+        const tmp = FILE + '.tmp';
+        await fs.writeFile(
+          tmp,
+          JSON.stringify(snapshot),
+          {mode: 0o600}
+        );
+        await fs.rename(tmp, FILE);
+      } catch (e) {
+        console.error('QUANT_CACHE', e.message);
+      }
+    });
+
   return saveQueue;
 }
 
@@ -136,31 +236,79 @@ function newDay() {
   }
 }
 
+
 async function load() {
   try {
-    const old=JSON.parse(await fs.readFile(FILE,'utf8'));
-    if(!Number.isFinite(old.cash) ||
-       !Array.isArray(old.positions) ||
-       !Array.isArray(old.trades)) throw Error('Estado invalido');
+    let old = await qRestore();
 
-    st={
-      ...blank(),
-      ...old,
-      settings:{...DEFAULT,...old.settings,enabled:false,
-        stake:50,goal:30,lossLimit:20,maxLosses:3,maxPositions:1},
-      usedSignals:old.usedSignals||{},
-      cooldowns:old.cooldowns||{},
-      stats:old.stats||{scans:0,signals:0,rejected:0},
-      lastScanMs:0
-    };
-    log('V5.2 restaurada. Requer ativacao manual');
-  } catch {
-    st=blank();
-    log('Carteira ficticia inicializada: 1000 USDT','warning');
+    if (!old) {
+      try {
+        old = JSON.parse(
+          await fs.readFile(FILE, 'utf8')
+        );
+      } catch {
+        old = null;
+      }
+    }
+
+    if (old) {
+      if (
+        !Number.isFinite(old.cash) ||
+        !Array.isArray(old.positions) ||
+        !Array.isArray(old.trades)
+      ) {
+        throw Error('Carteira armazenada invalida');
+      }
+
+      st = {
+        ...blank(),
+        ...old,
+        settings: {
+          ...DEFAULT,
+          ...old.settings,
+          enabled: false,
+          stake: 50,
+          goal: 30,
+          lossLimit: 20,
+          maxLosses: 3,
+          maxPositions: 1
+        },
+        usedSignals: old.usedSignals || {},
+        cooldowns: old.cooldowns || {},
+        stats: old.stats || {
+          scans: 0,
+          signals: 0,
+          rejected: 0
+        },
+        lastScanMs: 0
+      };
+
+      log(
+        'Carteira recuperada; ativacao manual necessaria'
+      );
+    } else {
+      st = blank();
+      log('Carteira inicial: 1000 USDT');
+    }
+
+    qDatabaseReady = true;
+    newDay();
+    await save();
+    ready = true;
+    log('Persistencia Supabase conectada');
+
+  } catch (e) {
+    ready = false;
+    qDatabaseReady = false;
+    st.settings.enabled = false;
+    st.diagnostic =
+      'ERRO DE PERSISTENCIA: ' + e.message;
+
+    console.error(
+      'QUANT_SUPABASE_STARTUP',
+      e.message
+    );
   }
-  newDay();
-  ready=true;
-  await save();
 }
 
 async function legacy() {
@@ -409,6 +557,7 @@ async function closePosition(p) {
 
   log('VENDA FICTICIA '+p.sym+' '+rnd(net)+
     ' USDT ('+reason+')',net>=0?'profit':'loss');
+  await save();
 }
 
 async function monitor() {
@@ -524,7 +673,8 @@ async function scan() {
         return;
       }
 
-      st.cash-=cost;
+      await save();
+        st.cash-=cost;
       st.positions.push({
         sym:pick.sym,entry,qty,cost,
         mark:q.bid,
@@ -543,6 +693,7 @@ async function scan() {
         ' 50 USDT | Nota '+pick.score;
 
       log(st.diagnostic,'buy');
+      await save();
       return;
     } catch(e) {
       st.lastError=e.message;
@@ -556,7 +707,11 @@ async function cycle() {
   busy=true;
   try {
     newDay();
+    if (!qDatabaseReady) {
+      throw Error('Supabase indisponivel');
+    }
     await monitor();
+    await save();
 
     const reason=blocking();
     if(reason) {
@@ -600,7 +755,7 @@ function state() {
     working:busy,
     simulation:true,
     realOrders:false,
-    storage:'Arquivo temporario no Render',
+    storage:'Supabase permanente + cache Render',
     system:'Agente Quant V5.2 - Scalping 70+',
     scanInterval:'1m',
     monitorInterval:'5s',
