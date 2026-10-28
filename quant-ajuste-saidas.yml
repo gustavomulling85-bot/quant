@@ -1,0 +1,136 @@
+name: Quant V5.2 - ajuste protegido de saidas
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ajuste:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Aplicar alteracoes com verificacao de trechos
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('quant-unified-bot.js')
+          source = p.read_text(encoding='utf-8')
+          if 'const LOSS_COOLDOWN_MS = 15 * 60000;' in source:
+              print('Ajuste ja instalado; nenhuma modificacao necessaria.')
+              raise SystemExit(0)
+          changes = [
+            (
+              'const COOLDOWN_MS = 2 * 60000;',
+              '''const COOLDOWN_MS = 2 * 60000;
+          const LOSS_COOLDOWN_MS = 15 * 60000;
+          const TRAIL_TRIGGER_NET = 0.05;
+          const TRAIL_GIVEBACK_NET = 0.03;
+          const TRAIL_FLOOR_NET = 0.005;'''
+            ),
+            (
+              '  const age=Date.now()-(Number.isFinite(opening)?opening:Date.now());\n\n  let reason=null;',
+              '''  const age=Date.now()-(Number.isFinite(opening)?opening:Date.now());
+
+          // Peak net is persisted with the position. Existing open positions
+          // are tracked from the next observation without reconstructing history.
+          p.peakNet=Math.max(Number.isFinite(p.peakNet)?p.peakNet:net,net);
+          let reason=null;'''
+            ),
+            (
+              "    else if(net<=-(p.stopNet??STOP_NET))\n      reason='STOP';\n    else if(age>=HOLD_MS)",
+              '''    else if(net<=-(p.stopNet??STOP_NET))
+                reason='STOP';
+              else if(p.peakNet>=TRAIL_TRIGGER_NET &&
+                      net>0 &&
+                      net<=Math.max(TRAIL_FLOOR_NET,
+                        p.peakNet-TRAIL_GIVEBACK_NET))
+                reason='PROTECAO_LUCRO';
+              else if(age>=HOLD_MS)'''
+            ),
+            (
+              '    reason,setup:p.setup,\n    score:p.score\n  });',
+              '''    reason,setup:p.setup,
+              score:p.score,
+              peakNet:Number.isFinite(p.peakNet)?p.peakNet:null,
+              givebackNet:Number.isFinite(p.peakNet)
+                ?Math.max(0,p.peakNet-net):null
+            });'''
+            ),
+            (
+              'async function scan() {',
+              '''function cooldownRemaining(sym) {
+            const last=st.cooldowns[sym]||0;
+            const lastTrade=st.trades.find(t=>t.symbol===sym);
+            const closeMs=Date.parse(lastTrade?.closedAt||'');
+            const losing=lastTrade?.net<0 && Number.isFinite(closeMs) &&
+              closeMs>=last-1000;
+            return Math.max(0,(losing?LOSS_COOLDOWN_MS:COOLDOWN_MS)
+              -(Date.now()-last));
+          }
+
+          async function scan() {'''
+            ),
+            (
+              '    Date.now()-(st.cooldowns[x.sym]||0)>=COOLDOWN_MS',
+              '    cooldownRemaining(x.sym)===0'
+            ),
+            (
+              '      if(Date.now()-(st.cooldowns[pick.sym]||0)<COOLDOWN_MS)',
+              '      if(cooldownRemaining(pick.sym)>0)'
+            ),
+            (
+              '        stopNet:STOP_NET,\n        signalTime:',
+              '        stopNet:STOP_NET,\n        peakNet:null,\n        signalTime:'
+            ),
+          ]
+          for before, after in changes:
+              count=source.count(before)
+              if count != 1:
+                  raise SystemExit(f'PARADO POR SEGURANCA: trecho esperado apareceu {count} vez(es): {before[:65]!r}')
+              source=source.replace(before,after,1)
+          p.write_text(source,encoding='utf-8')
+          print('Ajustes aplicados: trailing liquido e cooldown de 15m apos perda.')
+          PY
+      - name: Verificar sintaxe
+        run: node --check quant-unified-bot.js
+      - name: Verificar invariantes e modificacoes
+        shell: bash
+        run: |
+          node - <<'JS'
+          const fs=require('fs');
+          const s=fs.readFileSync('quant-unified-bot.js','utf8');
+          for(const x of [
+            'const TRAIL_TRIGGER_NET = 0.05;',
+            'const TRAIL_GIVEBACK_NET = 0.03;',
+            'const LOSS_COOLDOWN_MS = 15 * 60000;',
+            "reason='PROTECAO_LUCRO'",
+            "reason='TEMPO_12M'",
+            'const TARGET_NET = 0.22;',
+            'const STOP_NET = 0.50;',
+            'const FEE = 0.001;',
+            'const MONITOR_MS = 5000;',
+            "const Q_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';"
+          ]) if(!s.includes(x))throw Error('Regra ausente: '+x);
+          console.log('Verificacao de invariantes: OK');
+          JS
+          git diff --check
+      - name: Salvar no GitHub
+        shell: bash
+        run: |
+          if git diff --quiet -- quant-unified-bot.js; then
+            echo "Nenhuma alteracao pendente."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add quant-unified-bot.js
+          git commit -m "Quant V5.2: proteger lucro liquido e evitar recompra apos perda"
+          git push origin HEAD:main
