@@ -111,6 +111,10 @@ const TARGET_NET = 0.22;
 const STOP_NET = 0.50;
 const HOLD_MS = 12 * 60000;
 const COOLDOWN_MS = 2 * 60000;
+const LOSS_COOLDOWN_MS = 15 * 60000;
+const TRAIL_TRIGGER_NET = 0.05;
+const TRAIL_GIVEBACK_NET = 0.03;
+const TRAIL_FLOOR_NET = 0.005;
 const ZONE = 'America/Sao_Paulo';
 
 const now = () => new Date().toISOString();
@@ -520,12 +524,20 @@ async function closePosition(p) {
     ?p.openedMs:Date.parse(p.openedAt);
   const age=Date.now()-(Number.isFinite(opening)?opening:Date.now());
 
-  let reason=null;
+// Peak net is persisted with the position. Existing open positions
+// are tracked from the next observation without reconstructing history.
+p.peakNet=Math.max(Number.isFinite(p.peakNet)?p.peakNet:net,net);
+let reason=null;
   if(p.setup==='scalping-1m-5m') {
     if(net>=(p.targetNet??TARGET_NET))
       reason='LUCRO_LIQUIDO';
     else if(net<=-(p.stopNet??STOP_NET))
       reason='STOP';
+    else if(p.peakNet>=TRAIL_TRIGGER_NET &&
+            net>0 &&
+            net<=Math.max(TRAIL_FLOOR_NET,
+              p.peakNet-TRAIL_GIVEBACK_NET))
+      reason='PROTECAO_LUCRO';
     else if(age>=HOLD_MS)
       reason='TEMPO_12M';
   } else {
@@ -551,7 +563,10 @@ async function closePosition(p) {
     openedAt:p.openedAt,
     closedAt:now(),
     reason,setup:p.setup,
-    score:p.score
+    score:p.score,
+    peakNet:Number.isFinite(p.peakNet)?p.peakNet:null,
+    givebackNet:Number.isFinite(p.peakNet)
+      ?Math.max(0,p.peakNet-net):null
   });
   st.trades=st.trades.slice(0,500);
 
@@ -569,6 +584,16 @@ async function monitor() {
       log(st.lastError,'warning');
     }
   }
+}
+
+function cooldownRemaining(sym) {
+  const last=st.cooldowns[sym]||0;
+  const lastTrade=st.trades.find(t=>t.symbol===sym);
+  const closeMs=Date.parse(lastTrade?.closedAt||'');
+  const losing=lastTrade?.net<0 && Number.isFinite(closeMs) &&
+    closeMs>=last-1000;
+  return Math.max(0,(losing?LOSS_COOLDOWN_MS:COOLDOWN_MS)
+    -(Date.now()-last));
 }
 
 async function scan() {
@@ -619,7 +644,7 @@ async function scan() {
 
   const candidates=approved.filter(x=>
     st.usedSignals[x.sym]!==x.signalTime&&
-    Date.now()-(st.cooldowns[x.sym]||0)>=COOLDOWN_MS
+    cooldownRemaining(x.sym)===0
   );
 
   st.stats.signals+=approved.length;
@@ -653,7 +678,7 @@ async function scan() {
       if(Date.now()-pick.signalCloseTime>SIGNAL_AGE)
         continue;
 
-      if(Date.now()-(st.cooldowns[pick.sym]||0)<COOLDOWN_MS)
+      if(cooldownRemaining(pick.sym)>0)
         continue;
 
       const q=await book(pick.sym);
@@ -683,6 +708,7 @@ async function scan() {
         setup:'scalping-1m-5m',
         targetNet:TARGET_NET,
         stopNet:STOP_NET,
+        peakNet:null,
         signalTime:pick.signalTime,
         score:pick.score
       });
