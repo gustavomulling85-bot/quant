@@ -1,0 +1,133 @@
+name: Quant V5.2 - trava de perdas configuravel
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  configurar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Ajustar limites e interface sem apagar carteira
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          import re
+          
+          bot=Path('quant-unified-bot.js')
+          ui=Path('quant-unified-ui.js')
+          b=bot.read_text(encoding='utf-8')
+          u=ui.read_text(encoding='utf-8')
+          
+          def patch(s, before, after, label):
+              if after in s:
+                  print('Ja atualizado:',label)
+                  return s
+              # Match formatting changes from previous commits while refusing ambiguity.
+              pattern=r'\s+'.join(re.escape(part) for part in re.split(r'\s+', before.strip()))
+              matches=list(re.finditer(pattern,s))
+              if len(matches)!=1:
+                  raise SystemExit(f'PARADO COM SEGURANCA: {label} encontrado {len(matches)} vezes, esperado 1')
+              print('Atualizando:',label)
+              m=matches[0]
+              return s[:m.start()]+after+s[m.end():]
+          
+          b=patch(b,
+              '           maxLosses: 3,',
+              '           maxLosses: Number.isInteger(old.settings?.maxLosses) &&\n             old.settings.maxLosses >= 0 && old.settings.maxLosses <= 20\n               ? old.settings.maxLosses : 3,',
+              'preservar configuracao no reinicio')
+          
+          b=patch(b,
+              "   if(losses()>=3) return 'TRAVA: 3 LOSSES';",
+              "   if(st.settings.maxLosses>0 && losses()>=st.settings.maxLosses)\n     return 'TRAVA: '+st.settings.maxLosses+' LOSSES';",
+              'limite dinamico de perdas')
+          
+          b=patch(b,
+              '       st.settings.maxLosses=3;',
+              "       const maxLosses=Number(data.maxLosses);\n       if(!Number.isInteger(maxLosses) || ![0,3,5,10,20].includes(maxLosses))\n         throw Error('Escolha uma trava valida: 0, 3, 5, 10 ou 20');\n       st.settings.maxLosses=maxLosses;",
+              'salvar maxLosses via API')
+          
+          u=patch(u,
+              '''       <label>
+                   Início Brasília
+                   <input''',
+              '''       <label>
+                   Trava de perdas no dia
+                   <select id="quMaxLosses" style="display:block;width:170px;padding:10px;background:#081728;color:#fff;border:1px solid #456;border-radius:8px">
+                     <option value="3">3 perdas (padrão)</option>
+                     <option value="5">5 perdas</option>
+                     <option value="10">10 perdas</option>
+                     <option value="20">20 perdas</option>
+                     <option value="0">Sem limite de quantidade</option>
+                   </select>
+                 </label>
+          
+                 <label>
+                   Início Brasília
+                   <input''',
+              'campo para escolha de perdas')
+          
+          u=patch(u,
+              "     $('quLoss').value =\n       data.settings.lossLimit;",
+              "     $('quLoss').value =\n       data.settings.lossLimit;\n\n     if (document.activeElement !== $('quMaxLosses')) {\n       $('quMaxLosses').value = String(data.settings.maxLosses ?? 3);\n     }",
+              'atualizar escolha na tela')
+          
+          u=patch(u,
+              "     card(cards, 'Losses hoje',\n       (data.lossesToday || 0) + '/3');",
+              "     card(cards, 'Losses hoje',\n       (data.lossesToday || 0) + '/' +\n       (data.settings.maxLosses === 0 ? 'sem limite' : (data.settings.maxLosses ?? 3)));",
+              'contador resumido')
+          
+          u=patch(u,
+              "       '/3 | Última análise: ' +",
+              "       '/' + (data.settings.maxLosses === 0 ? 'sem limite' : (data.settings.maxLosses ?? 3)) +\n       ' | Última análise: ' +",
+              'contador do painel')
+          
+          u=patch(u,
+              "         lossLimit: 20,\n         start: $('quStart').value",
+              "         lossLimit: 20,\n         maxLosses: Number($('quMaxLosses').value),\n         start: $('quStart').value",
+              'enviar escolha ao backend')
+          
+          bot.write_text(b,encoding='utf-8')
+          ui.write_text(u,encoding='utf-8')
+          print('Arquivos atualizados em workspace temporario')
+          
+          PYCODE
+      - name: Validar sintaxe e regras de seguranca
+        shell: bash
+        run: |
+          node --check quant-unified-bot.js
+          node --check quant-unified-ui.js
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          b=Path('quant-unified-bot.js').read_text()
+          u=Path('quant-unified-ui.js').read_text()
+          assert 'if(st.settings.maxLosses>0 && losses()>=st.settings.maxLosses)' in b
+          assert "! [0,3,5,10,20]" not in b
+          assert '[0,3,5,10,20].includes(maxLosses)' in b
+          assert 'lossLimit:20' in b and 'const STOP_NET = 0.50' in b
+          assert 'PROTECAO_LUCRO' in b and 'LOSS_COOLDOWN_MS' in b
+          assert 'quMaxLosses' in u and "maxLosses: Number($('quMaxLosses').value)" in u
+          print('Validacao de protecoes e controles: OK')
+          PYCODE
+          git diff --check
+      - name: Salvar e publicar alteracoes no GitHub
+        shell: bash
+        run: |
+          if git diff --quiet -- quant-unified-bot.js quant-unified-ui.js; then
+            echo 'Nenhuma alteracao pendente.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add quant-unified-bot.js quant-unified-ui.js
+          git commit -m 'Quant V5.2: tornar trava virtual de perdas configuravel'
+          git push origin HEAD:main
