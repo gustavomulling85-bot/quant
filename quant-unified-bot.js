@@ -274,7 +274,9 @@ async function load() {
           stake: 50,
           goal: 30,
           lossLimit: 20,
-          maxLosses: 3,
+                     maxLosses: Number.isInteger(old.settings?.maxLosses) &&
+             old.settings.maxLosses >= 0 && old.settings.maxLosses <= 20
+               ? old.settings.maxLosses : 3,
           maxPositions: 1
         },
         usedSignals: old.usedSignals || {},
@@ -333,7 +335,8 @@ async function legacy() {
 function blocking() {
   if(!st.settings.enabled) return 'DESLIGADO';
   if(clock()<st.settings.start) return 'AGUARDANDO HORARIO';
-  if(losses()>=3) return 'TRAVA: 3 LOSSES';
+     if(st.settings.maxLosses>0 && losses()>=st.settings.maxLosses)
+     return 'TRAVA: '+st.settings.maxLosses+' LOSSES';
   if(pnl()<=-20) return 'LIMITE DE PERDA DIARIA';
   if(pnl()>=30) return 'META DIARIA ATINGIDA';
   if(st.positions.length>=1) return 'POSICAO ABERTA';
@@ -852,7 +855,10 @@ async function handle(req,res,url) {
       st.settings.stake=50;
       st.settings.goal=30;
       st.settings.lossLimit=20;
-      st.settings.maxLosses=3;
+             const maxLosses=Number(data.maxLosses);
+       if(!Number.isInteger(maxLosses) || ![0,3,5,10,20].includes(maxLosses))
+         throw Error('Escolha uma trava valida: 0, 3, 5, 10 ou 20');
+       st.settings.maxLosses=maxLosses;
       st.settings.maxPositions=1;
       st.settings.start=data.start;
 

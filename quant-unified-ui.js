@@ -101,9 +101,20 @@
         >
       </label>
 
-      <label>
-        Início Brasília
-        <input
+             <label>
+         Trava de perdas no dia
+         <select id="quMaxLosses" style="display:block;width:170px;padding:10px;background:#081728;color:#fff;border:1px solid #456;border-radius:8px">
+           <option value="3">3 perdas (padrão)</option>
+           <option value="5">5 perdas</option>
+           <option value="10">10 perdas</option>
+           <option value="20">20 perdas</option>
+           <option value="0">Sem limite de quantidade</option>
+         </select>
+       </label>
+
+       <label>
+         Início Brasília
+         <input
           id="quStart"
           type="time"
           value="09:00"
@@ -411,8 +422,9 @@
     card(cards, 'Operações encerradas hoje',
       todayTrades.length);
 
-    card(cards, 'Losses hoje',
-      (data.lossesToday || 0) + '/3');
+         card(cards, 'Losses hoje',
+       (data.lossesToday || 0) + '/' +
+       (data.settings.maxLosses === 0 ? 'sem limite' : (data.settings.maxLosses ?? 3)));
 
     card(cards, 'Ganhos realizados hoje',
       money(gains),
@@ -491,8 +503,12 @@
     $('quGoal').value =
       data.settings.goal;
 
-    $('quLoss').value =
-      data.settings.lossLimit;
+         $('quLoss').value =
+       data.settings.lossLimit;
+
+     if (document.activeElement !== $('quMaxLosses')) {
+       $('quMaxLosses').value = String(data.settings.maxLosses ?? 3);
+     }
 
     if (
       document.activeElement !== $('quStart')
@@ -514,7 +530,8 @@
       (data.openedToday || 0) +
       ' | Losses: ' +
       (data.lossesToday || 0) +
-      '/3 | Última análise: ' +
+             '/' + (data.settings.maxLosses === 0 ? 'sem limite' : (data.settings.maxLosses ?? 3)) +
+       ' | Última análise: ' +
       dateTime(data.lastScan);
 
     $('quDiag').textContent =
@@ -639,8 +656,9 @@
       api('config', {
         stake: 50,
         goal: 30,
-        lossLimit: 20,
-        start: $('quStart').value
+                 lossLimit: 20,
+         maxLosses: Number($('quMaxLosses').value),
+         start: $('quStart').value
       })
     );
 
