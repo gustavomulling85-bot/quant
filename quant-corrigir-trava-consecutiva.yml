@@ -1,0 +1,115 @@
+name: Quant V5.2 - corrigir trava de perdas consecutivas
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  corrigir-trava:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Obter codigo atual
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Aplicar correcao pontual
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          
+          bot_path = Path("quant-unified-bot.js")
+          ui_path = Path("quant-unified-ui.js")
+          bot = bot_path.read_text(encoding="utf-8")
+          ui = ui_path.read_text(encoding="utf-8")
+          
+          def replace_once(text, old, new, label):
+              n = text.count(old)
+              if n != 1:
+                  raise RuntimeError(f"{label}: esperado 1 trecho, encontrado {n}. Nenhum arquivo foi gravado.")
+              return text.replace(old, new, 1)
+          
+          old_losses = """function losses() {
+            return st.trades.filter(t =>
+              t.net<0 &&
+              brParts(new Date(t.closedAt)).day===st.day
+            ).length;
+          }"""
+          new_losses = old_losses + """
+          
+          // Quantidade de perdas consecutivas encerradas HOJE.
+          // O array de trades e guardado do mais recente ao mais antigo.
+          function consecutiveLosses() {
+            let streak = 0;
+            for (const trade of st.trades) {
+              const closed = new Date(trade.closedAt);
+              if (!Number.isFinite(closed.getTime())) continue;
+              if (brParts(closed).day !== st.day) break;
+              if (trade.net < 0) streak++;
+              else break;
+            }
+            return streak;
+          }"""
+          bot = replace_once(bot, old_losses, new_losses, "funcao de contagem")
+          bot = replace_once(
+              bot,
+              "if(st.settings.maxLosses>0 && losses()>=st.settings.maxLosses)",
+              "if(st.settings.maxLosses>0 && consecutiveLosses()>=st.settings.maxLosses)",
+              "bloqueio por sequencia",
+          )
+          bot = replace_once(
+              bot,
+              "    lossesToday:losses(),",
+              "    lossesToday:losses(),\n    consecutiveLossesToday:consecutiveLosses(),",
+              "API de status",
+          )
+          
+          ui = replace_once(ui, "Trava de perdas no dia", "Trava de perdas consecutivas", "rotulo")
+          old_card = """         card(cards, 'Losses hoje',
+                 (data.lossesToday || 0) + '/' +
+                 (data.settings.maxLosses === 0 ? 'sem limite' : (data.settings.maxLosses ?? 3)));"""
+          new_card = """    card(cards, 'Perdas totais hoje', data.lossesToday || 0);
+              card(cards, 'Perdas consecutivas',
+                (data.consecutiveLossesToday || 0) + '/' +
+                (data.settings.maxLosses === 0 ? 'sem limite' : (data.settings.maxLosses ?? 3)));"""
+          ui = replace_once(ui, old_card, new_card, "cartao de perdas")
+          old_status = """       (data.lossesToday || 0) +
+                       '/' + (data.settings.maxLosses === 0 ? 'sem limite' : (data.settings.maxLosses ?? 3)) +"""
+          new_status = """       (data.lossesToday || 0) +
+                 ' | Sequencia: ' +
+                 (data.consecutiveLossesToday || 0) +
+                 '/' + (data.settings.maxLosses === 0 ? 'sem limite' : (data.settings.maxLosses ?? 3)) +"""
+          ui = replace_once(ui, old_status, new_status, "resumo de status")
+          
+          assert "if(pnl()<=-20) return 'LIMITE DE PERDA DIARIA';" in bot
+          assert "    lossLimit:20," in bot
+          assert "maxLosses: Number($('quMaxLosses').value)" in ui
+          assert "peakNet" in bot
+          assert bot.count("consecutiveLossesToday:consecutiveLosses()") == 1
+          
+          bot_path.write_text(bot, encoding="utf-8")
+          ui_path.write_text(ui, encoding="utf-8")
+          print("Ajuste aplicado: perdas totais e perdas consecutivas separadas.")
+          PY
+      - name: Validar sintaxe JavaScript
+        run: |
+          node --check quant-unified-bot.js
+          node --check quant-unified-ui.js
+
+      - name: Conferir diff
+        run: git diff --check && git diff --stat && git diff -- quant-unified-bot.js quant-unified-ui.js
+
+      - name: Publicar atualizacao
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add quant-unified-bot.js quant-unified-ui.js
+          if git diff --cached --quiet; then
+            echo "Nenhuma alteracao necessaria."
+          else
+            git commit -m "Quant: separar perdas consecutivas das perdas do dia"
+            git push
+          fi
