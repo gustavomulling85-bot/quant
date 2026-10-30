@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Quant V5.3 — Laboratório de Saídas</title>
+<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#091424;color:#edf3ff;font:16px system-ui,Arial}main{max-width:960px;margin:auto;padding:18px}h1{font-size:1.6rem}p{color:#b8cbe5;line-height:1.55}.box{background:#14243a;border:1px solid #38516e;border-radius:16px;padding:16px;margin:16px 0}.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}label{display:block;margin-bottom:6px}select,input{width:100%;background:#071629;color:#fff;border:1px solid #526a87;border-radius:9px;padding:12px;font:inherit}button{background:#f7bd16;border:0;border-radius:10px;color:#192232;font-weight:800;padding:14px;margin:12px 0}button:disabled{opacity:.6}a{color:#8cbdff}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}.card{background:#071629;border:1px solid #3c5574;border-radius:12px;padding:12px}.money{font-size:1.3rem;font-weight:800}.bad{color:#ff9090}.good{color:#53dca9}.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:620px}th,td{padding:10px;border-bottom:1px solid #34506e;text-align:right}th:first-child,td:first-child{text-align:left}small{color:#adc4dd}progress{width:100%}</style></head><body><main>
+<a href="/quant-unificado.html">← Painel Único</a> · <a href="/laboratorio-v3.html">Laboratório de Entradas V3</a>
+<h1>🧪 Quant V5.3 — Laboratório de Saídas</h1>
+<p>Compara cinco regras de venda sobre <b>as mesmas compras fictícias</b>. Não acessa a carteira, não envia ordens e não grava no Supabase.</p>
+<section class="box"><h2>Executar experimento</h2><div class="fields"><div><label for="symbol">Moeda</label><select id="symbol"><option>ETH</option><option>BTC</option><option>SOL</option><option>BNB</option><option>LINK</option><option>XRP</option><option>UNI</option><option>AVAX</option><option>ADA</option><option>DOGE</option><option>NEAR</option><option>TRX</option></select></div><div><label for="stake">Compra fictícia (USDT)</label><input id="stake" type="number" value="50" min="10" max="100" step="10"></div><div><label for="n">Amostra</label><select id="n"><option value="1000">Até 1.000 velas de 1m</option><option value="500">Até 500 velas de 1m</option></select></div></div><button id="run">Comparar vendas</button><progress id="progress" max="100" value="0"></progress><p id="status" role="status">Pronto para testar.</p><small>Sinais experimentais: EMA9 acima da EMA21, rompimento das 6 máximas anteriores, volume ≥1,10×, RSI 52–76. Não reproduz exatamente a seleção do V5.2. Usa somente velas fechadas de 1 minuto.</small></section>
+<section class="box"><h2>Comparativo das vendas</h2><div id="cards" class="cards"><p>Execute o experimento.</p></div><p><small>Uma posição por vez; trava de 3 perdas consecutivas em cada cenário. Custos simulados de 0,10% de taxa e 0,03% de deslizamento por lado; alvo +0,22, stop −0,50 USDT.</small></p></section>
+<section class="box"><h2>Mesmas entradas: comparação pareada</h2><div class="scroll"><table><thead><tr><th>Entrada UTC</th><th>3min</th><th>5min</th><th>8min</th><th>12min</th><th>Proteção</th></tr></thead><tbody id="rows"><tr><td colspan="6">Sem dados.</td></tr></tbody></table></div><p><small>Todos os cenários partem dos mesmos sinais, com espaçamento mínimo de 12 minutos entre entradas para evitar sobreposição. Os resultados pareados abaixo ignoram a trava, que só é aplicada nos cartões de cada cenário.</small></p></section>
+<section class="box"><h2>Limitações importantes</h2><p>A proteção verifica apenas fechamentos de 1 minuto. Picos intraminuto e execução real de ordens não são observados. O teste é exploratório, tem amostra curta e não demonstra rentabilidade futura. Antes de alterar o executor, testar em períodos independentes e com mais moedas.</p></section>
+</main><script>
+'use strict';
+const $ = id => document.getElementById(id);
+const FEE = 0.001, SLIP = 0.0003;
+const fmt = value => (value >= 0 ? '+' : '') + value.toFixed(4);
+const scenarios = [
+  {name:'3 min',maxMinutes:3}, {name:'5 min',maxMinutes:5},
+  {name:'8 min',maxMinutes:8}, {name:'12 min',maxMinutes:12},
+  {name:'Proteção V5.3',maxMinutes:12,armNet:0.08,givebackNet:0.035,floorNet:0.02}
+];
+function ema(a,n) {if(a.length<n)return NaN;let v=a[a.length-n],k=2/(n+1);for(const x of a.slice(-n+1))v=k*x+(1-k)*v;return v;}
+function rsi(a) {const x=a.slice(-15);if(x.length<15)return 50;let g=0,l=0;for(let i=1;i<x.length;i++){const d=x[i]-x[i-1];g+=Math.max(0,d);l+=Math.max(0,-d);}return l===0?(g?100:50):100-100/(1+g/l);}
+function signal(b,i) {
+  if(i<45)return false;
+  const recent=b.slice(0,i+1).map(x=>x.c);
+  const priorHigh=Math.max(...b.slice(i-6,i).map(x=>x.h));
+  const avgVolume=b.slice(i-20,i).reduce((sum,x)=>sum+x.v,0)/20;
+  const strength=rsi(recent);
+  return ema(recent,9)>ema(recent,21)&&b[i].c>ema(recent,9)&&b[i].c>priorHigh&&b[i].c>b[i].o&&b[i].v>=avgVolume*1.1&&strength>=52&&strength<=76;
+}
+function simulate(entry,candles,cfg) {
+  let peak=-Infinity;
+  for(let i=0;i<Math.min(cfg.maxMinutes,candles.length);i++) {
+    const price=candles[i].c*(1-SLIP);
+    const net=entry.qty*price*(1-FEE)-entry.stake;
+    peak=Math.max(peak,net);
+    let why='';
+    if(net>=0.22)why='ALVO';
+    else if(net<=-0.50)why='STOP';
+    else if(cfg.name==='Proteção V5.3'&&peak>=cfg.armNet&&net>cfg.floorNet&&peak-net>=cfg.givebackNet)why='PROTECAO_LUCRO';
+    else if(i===Math.min(cfg.maxMinutes,candles.length)-1)why='TEMPO';
+    if(why)return {net,why,minutes:i+1};
+  }
+  throw Error('Velas insuficientes');
+}
+async function load(symbol,n) {
+  let last;
+  for(const host of ['https://data-api.binance.vision','https://api.binance.com']) {
+    try {
+      const ctrl=new AbortController(),timeout=setTimeout(()=>ctrl.abort(),15000);
+      let response;
+      try {response=await fetch(host+'/api/v3/klines?symbol='+encodeURIComponent(symbol+'USDT')+'&interval=1m&limit='+n,{signal:ctrl.signal,cache:'no-store'});}finally{clearTimeout(timeout);}
+      if(!response.ok)throw Error('HTTP '+response.status);
+      const raw=await response.json();
+      const bars=raw.map(x=>({t:+x[0],end:+x[6],o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5]})).filter(x=>x.end<Date.now()&&x.c>0&&Number.isFinite(x.v));
+      if(bars.length<100)throw Error('Poucas velas');
+      return bars;
+    }catch(error){last=error;}
+  }
+  throw Error('Binance indisponível: '+last.message);
+}
+$('run').onclick=async()=>{
+  const btn=$('run');btn.disabled=true;$('progress').value=10;
+  try {
+    const stake=+$('stake').value;
+    if(!Number.isFinite(stake)||stake<10||stake>100)throw Error('Valor entre 10 e 100 USDT');
+    const symbol=$('symbol').value;
+    $('status').textContent='Consultando candles fechados...';
+    const bars=await load(symbol,+$('n').value);$('progress').value=65;
+    const entries=[];
+    for(let i=46;i+12<=bars.length;i++) {
+      if(signal(bars,i-1)) {
+        const open=bars[i].o*(1+SLIP),qty=stake*(1-FEE)/open;
+        entries.push({time:bars[i].t,stake,qty,candles:bars.slice(i,i+12)});
+        i+=11;
+      }
+    }
+    const rows=entries.map(e=>scenarios.map(cfg=>simulate(e,e.candles,cfg)));
+    $('cards').innerHTML=scenarios.map((cfg,j)=>{
+      let total=0,wins=0,losses=0,streak=0,blocked=false,count=0;
+      for(const row of rows) {
+        if(blocked)break;
+        const result=row[j];count++;total+=result.net;
+        if(result.net>0){wins++;streak=0;}else{losses++;streak++;}
+        if(streak>=3||total<=-20)blocked=true;
+      }
+      return '<div class="card"><b>'+cfg.name+'</b><div class="money '+(total>=0?'good':'bad')+'">'+fmt(total)+' USDT</div><small>'+count+' operações · '+wins+' ganhos · '+losses+' perdas<br>Trava: '+(blocked?'SIM':'Não')+'</small></div>';
+    }).join('');
+    $('rows').innerHTML=entries.map((entry,i)=>'<tr><td>'+new Date(entry.time).toISOString().slice(5,16).replace('T',' ')+'</td>'+rows[i].map(result=>'<td class="'+(result.net>=0?'good':'bad')+'">'+fmt(result.net)+'</td>').join('')+'</tr>').join('')||'<tr><td colspan="6">Nenhum sinal nessa amostra.</td></tr>';
+    $('status').textContent='Concluído: '+symbol+' · '+bars.length+' velas · '+entries.length+' entradas comparáveis. Carteira V5.2 intacta.';
+    $('progress').value=100;
+  }catch(error){$('progress').value=0;$('status').textContent='Erro: '+error.message;}finally{btn.disabled=false;}
+};
+</script></body></html>
