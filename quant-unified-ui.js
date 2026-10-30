@@ -102,7 +102,7 @@
       </label>
 
              <label>
-         Trava de perdas no dia
+         Trava de perdas consecutivas
          <select id="quMaxLosses" style="display:block;width:170px;padding:10px;background:#081728;color:#fff;border:1px solid #456;border-radius:8px">
            <option value="3">3 perdas (padrão)</option>
            <option value="5">5 perdas</option>
@@ -422,9 +422,8 @@
     card(cards, 'Operações encerradas hoje',
       todayTrades.length);
 
-         card(cards, 'Losses hoje',
-       (data.lossesToday || 0) + '/' +
-       (data.settings.maxLosses === 0 ? 'sem limite' : (data.settings.maxLosses ?? 3)));
+         card(cards, 'Perdas totais hoje', data.lossesToday || 0);
+    card(cards, 'Perdas consecutivas', (data.consecutiveLossesToday || 0) + '/' + (data.settings.maxLosses === 0 ? 'sem limite' : (data.settings.maxLosses ?? 3)));
 
     card(cards, 'Ganhos realizados hoje',
       money(gains),
@@ -530,7 +529,7 @@
       (data.openedToday || 0) +
       ' | Losses: ' +
       (data.lossesToday || 0) +
-             '/' + (data.settings.maxLosses === 0 ? 'sem limite' : (data.settings.maxLosses ?? 3)) +
+             ' | Sequencia: ' + (data.consecutiveLossesToday || 0) + '/' + (data.settings.maxLosses === 0 ? 'sem limite' : (data.settings.maxLosses ?? 3)) +
        ' | Última análise: ' +
       dateTime(data.lastScan);
 

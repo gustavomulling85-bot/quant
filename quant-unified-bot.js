@@ -188,6 +188,19 @@ function losses() {
   ).length;
 }
 
+// Perdas consecutivas em operacoes encerradas no dia atual (ordem decrescente).
+function consecutiveLosses() {
+  let streak = 0;
+  for (const t of st.trades) {
+    const closed = new Date(t.closedAt);
+    if (!Number.isFinite(closed.getTime())) continue;
+    if (brParts(closed).day !== st.day) break;
+    if (t.net < 0) streak++;
+    else break;
+  }
+  return streak;
+}
+
 function log(text,type='info') {
   st.events.unshift({at:now(),text,type});
   st.events=st.events.slice(0,120);
@@ -335,7 +348,7 @@ async function legacy() {
 function blocking() {
   if(!st.settings.enabled) return 'DESLIGADO';
   if(clock()<st.settings.start) return 'AGUARDANDO HORARIO';
-     if(st.settings.maxLosses>0 && losses()>=st.settings.maxLosses)
+     if(st.settings.maxLosses>0 && consecutiveLosses()>=st.settings.maxLosses)
      return 'TRAVA: '+st.settings.maxLosses+' LOSSES';
   if(pnl()<=-20) return 'LIMITE DE PERDA DIARIA';
   if(pnl()>=30) return 'META DIARIA ATINGIDA';
@@ -777,6 +790,7 @@ function state() {
   return {
     ...st,
     lossesToday:losses(),
+    consecutiveLossesToday:consecutiveLosses(),
     netToday:pnl(),
     equity:equity(),
     blocking:blocking(),
