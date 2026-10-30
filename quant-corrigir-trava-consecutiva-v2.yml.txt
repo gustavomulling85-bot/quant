@@ -1,0 +1,78 @@
+name: Quant V5.2 - corrigir trava consecutiva V2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  corrigir-trava:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Aplicar ajuste com validacao atomica
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          bp=Path('quant-unified-bot.js')
+          up=Path('quant-unified-ui.js')
+          bot=bp.read_text(encoding='utf-8')
+          ui=up.read_text(encoding='utf-8')
+
+          def one(text, pattern, replacement, label, flags=0):
+              new, count = re.subn(pattern, replacement, text, count=0, flags=flags)
+              if count != 1:
+                  raise RuntimeError(f'{label}: esperado exatamente 1 trecho, encontrado {count}. Nenhum arquivo foi modificado.')
+              return new
+
+          if 'function consecutiveLosses()' in bot:
+              raise RuntimeError('Contador consecutivo ja existe. Verifique antes de executar novamente.')
+
+          bot=one(bot,
+              r'(function losses\(\)\s*\{[\s\S]*?\n\})',
+              lambda m: m.group(1)+'''\n\n// Perdas consecutivas em operacoes encerradas no dia atual (ordem decrescente).\nfunction consecutiveLosses() {\n  let streak = 0;\n  for (const t of st.trades) {\n    const closed = new Date(t.closedAt);\n    if (!Number.isFinite(closed.getTime())) continue;\n    if (brParts(closed).day !== st.day) break;\n    if (t.net < 0) streak++;\n    else break;\n  }\n  return streak;\n}''',
+              'funcao losses')
+          bot=one(bot,
+              r'(st\.settings\.maxLosses\s*>\s*0\s*&&\s*)losses\(\)(\s*>=\s*st\.settings\.maxLosses)',
+              lambda m: m.group(1)+'consecutiveLosses()'+m.group(2),
+              'bloqueio')
+          bot=one(bot,
+              r'(lossesToday\s*:\s*losses\(\)\s*,)',
+              lambda m: m.group(1)+'\n    consecutiveLossesToday:consecutiveLosses(),',
+              'campo de status')
+
+          ui=one(ui, 'Trava de perdas no dia', 'Trava de perdas consecutivas', 'rotulo da trava')
+          ui=one(ui,
+              r"card\(cards,\s*'Losses hoje',\s*\(data\.lossesToday\s*\|\|\s*0\)\s*\+\s*'/'\s*\+\s*\(data\.settings\.maxLosses\s*===\s*0\s*\?\s*'sem limite'\s*:\s*\(data\.settings\.maxLosses\s*\?\?\s*3\)\)\);",
+              "card(cards, 'Perdas totais hoje', data.lossesToday || 0);\n    card(cards, 'Perdas consecutivas', (data.consecutiveLossesToday || 0) + '/' + (data.settings.maxLosses === 0 ? 'sem limite' : (data.settings.maxLosses ?? 3)));",
+              'cartoes perdas')
+          ui=one(ui,
+              r"(\(data\.lossesToday\s*\|\|\s*0\)\s*\+\s*)'/'\s*\+\s*(\(data\.settings\.maxLosses\s*===\s*0\s*\?\s*'sem limite'\s*:\s*\(data\.settings\.maxLosses\s*\?\?\s*3\)\)\s*\+)",
+              lambda m: m.group(1)+"' | Sequencia: ' + (data.consecutiveLossesToday || 0) + '/' + "+m.group(2),
+              'resumo do painel')
+
+          assert "if(pnl()<=-20) return 'LIMITE DE PERDA DIARIA';" in bot
+          assert "maxLosses: Number($('quMaxLosses').value)" in ui
+          assert bot.count('function consecutiveLosses()') == 1
+          assert bot.count('consecutiveLossesToday:consecutiveLosses()') == 1
+          bp.write_text(bot,encoding='utf-8')
+          up.write_text(ui,encoding='utf-8')
+          print('Correcao aplicada sem alterar historico ou carteira.')
+          PY
+      - name: Verificar sintaxe JavaScript
+        run: |
+          node --check quant-unified-bot.js
+          node --check quant-unified-ui.js
+      - name: Conferir alteracoes
+        run: git diff --check && git diff --stat
+      - name: Publicar
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add quant-unified-bot.js quant-unified-ui.js
+          git commit -m 'Quant: corrigir contagem de perdas consecutivas'
+          git push
