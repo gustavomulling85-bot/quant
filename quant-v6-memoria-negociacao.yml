@@ -1,0 +1,45 @@
+name: Quant V6 - memoria de negociacao
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  memoria-v6:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Incorporar memoria passiva ao V5.2
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("quant-unified-bot.js")
+          s=p.read_text(encoding="utf-8")
+          assert s.count('    rsi:rnd(strength),\n    volumeRatio:rnd(volumeRatio),')==1,"Trecho 1 divergente; nenhum arquivo gravado"
+          s=s.replace('    rsi:rnd(strength),\n    volumeRatio:rnd(volumeRatio),','    rsi:rnd(strength),\n    volumeRatio:rnd(volumeRatio),\n    memoryFeatures:{\n      rsi:rnd(strength),volumeRatio:rnd(volumeRatio),\n      ema9_1m:rnd(e1fast),ema21_1m:rnd(e1slow),\n      ema9_5m:rnd(e5fast),ema21_5m:rnd(e5slow),\n      ema21DistancePct:rnd(100*(b.c-e1slow)/e1slow),\n      breakoutPct:rnd(100*(b.c-priorHigh)/priorHigh),\n      trend1:checks.trend1,trend5:checks.trend5,\n      breakout:checks.breakout,volumeOk:checks.volume,\n      rsiOk:checks.rsi,signalCloseTime:b.end\n    },',1)
+          assert s.count('p.peakNet=Math.max(Number.isFinite(p.peakNet)?p.peakNet:net,net);\nlet reason=null;')==1,"Trecho 2 divergente; nenhum arquivo gravado"
+          s=s.replace('p.peakNet=Math.max(Number.isFinite(p.peakNet)?p.peakNet:net,net);\nlet reason=null;','p.peakNet=Math.max(Number.isFinite(p.peakNet)?p.peakNet:net,net);\n// V6: pior resultado observado, nao interfere na venda.\np.troughNet=Math.min(Number.isFinite(p.troughNet)?p.troughNet:net,net);\nlet reason=null;',1)
+          assert s.count('    score:p.score,\n    peakNet:Number.isFinite(p.peakNet)?p.peakNet:null,')==1,"Trecho 3 divergente; nenhum arquivo gravado"
+          s=s.replace('    score:p.score,\n    peakNet:Number.isFinite(p.peakNet)?p.peakNet:null,','    score:p.score,\n    memoryVersion:p.memoryFeatures?6:null,\n    memoryFeatures:p.memoryFeatures||null,\n    troughNet:Number.isFinite(p.troughNet)?p.troughNet:null,\n    peakNet:Number.isFinite(p.peakNet)?p.peakNet:null,',1)
+          assert s.count('        peakNet:null,\n        signalTime:pick.signalTime,\n        score:pick.score')==1,"Trecho 4 divergente; nenhum arquivo gravado"
+          s=s.replace('        peakNet:null,\n        signalTime:pick.signalTime,\n        score:pick.score','        peakNet:null,\n        troughNet:null,\n        memoryFeatures:pick.memoryFeatures||null,\n        signalTime:pick.signalTime,\n        score:pick.score',1)
+          assert "if(pnl()<=-20) return 'LIMITE DE PERDA DIARIA'" in s
+          assert 'consecutiveLosses()>=st.settings.maxLosses' in s
+          assert 'st.trades=st.trades.slice(0,500)' in s
+          p.write_text(s,encoding='utf-8')
+          print('Memoria V6 gravada, sem mudancas nas regras de compra/venda')
+          PY
+      - name: Validar antes de publicar
+        run: |
+          node --check quant-unified-bot.js
+          git diff --check
+      - name: Publicar correcao
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add quant-unified-bot.js
+          git commit -m "Quant V6: memoria de entrada e pior resultado observado"
+          git push
