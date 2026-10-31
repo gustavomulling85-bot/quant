@@ -493,6 +493,16 @@ function analyze(one,five) {
     signalAgeMs:age,
     rsi:rnd(strength),
     volumeRatio:rnd(volumeRatio),
+    memoryFeatures:{
+      rsi:rnd(strength),volumeRatio:rnd(volumeRatio),
+      ema9_1m:rnd(e1fast),ema21_1m:rnd(e1slow),
+      ema9_5m:rnd(e5fast),ema21_5m:rnd(e5slow),
+      ema21DistancePct:rnd(100*(b.c-e1slow)/e1slow),
+      breakoutPct:rnd(100*(b.c-priorHigh)/priorHigh),
+      trend1:checks.trend1,trend5:checks.trend5,
+      breakout:checks.breakout,volumeOk:checks.volume,
+      rsiOk:checks.rsi,signalCloseTime:b.end
+    },
     trendConfirmed:checks.trend5&&checks.trend1,
     timing1:checks.breakout,
     breakout5:checks.breakout
@@ -543,6 +553,8 @@ async function closePosition(p) {
 // Peak net is persisted with the position. Existing open positions
 // are tracked from the next observation without reconstructing history.
 p.peakNet=Math.max(Number.isFinite(p.peakNet)?p.peakNet:net,net);
+// V6: pior resultado observado, nao interfere na venda.
+p.troughNet=Math.min(Number.isFinite(p.troughNet)?p.troughNet:net,net);
 let reason=null;
   if(p.setup==='scalping-1m-5m') {
     if(net>=(p.targetNet??TARGET_NET))
@@ -580,6 +592,9 @@ let reason=null;
     closedAt:now(),
     reason,setup:p.setup,
     score:p.score,
+    memoryVersion:p.memoryFeatures?6:null,
+    memoryFeatures:p.memoryFeatures||null,
+    troughNet:Number.isFinite(p.troughNet)?p.troughNet:null,
     peakNet:Number.isFinite(p.peakNet)?p.peakNet:null,
     givebackNet:Number.isFinite(p.peakNet)
       ?Math.max(0,p.peakNet-net):null
@@ -725,6 +740,8 @@ async function scan() {
         targetNet:TARGET_NET,
         stopNet:STOP_NET,
         peakNet:null,
+        troughNet:null,
+        memoryFeatures:pick.memoryFeatures||null,
         signalTime:pick.signalTime,
         score:pick.score
       });
