@@ -112,6 +112,71 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // ======================================
+    // QUANT — MEMORIA ESTRATEGICA
+    // Consulta privada, somente leitura
+    // ======================================
+
+    if (
+      u.pathname === '/api/quant/research' &&
+      req.method === 'GET'
+    ) {
+      if (!pinValid(req.headers['x-quant-pin'])) {
+        return json(res, 401, {
+          error: 'Acesso nao autorizado.'
+        });
+      }
+
+      const base = process.env.SUPABASE_URL;
+      const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+      if (!base || !key) {
+        return json(res, 503, {
+          error: 'Memoria nao configurada no Render.'
+        });
+      }
+
+      try {
+        const url =
+          base.replace(/\/$/, '') +
+          '/rest/v1/quant_research_summary' +
+          '?select=*' +
+          '&order=coin.asc,strategy.asc';
+
+        const response = await fetch(url, {
+          headers: {
+            apikey: key,
+            Authorization: 'Bearer ' + key,
+            Accept: 'application/json'
+          },
+          signal: AbortSignal.timeout(15000)
+        });
+
+        if (!response.ok) {
+          return json(res, 502, {
+            error: 'Falha ao consultar o Supabase.',
+            status: response.status
+          });
+        }
+
+        const records = await response.json();
+
+        return json(res, 200, {
+          module: 'quant-strategic-memory',
+          mode: 'RESEARCH_ONLY',
+          liveTradingModified: false,
+          consultedAt: new Date().toISOString(),
+          total: records.length,
+          records
+        });
+
+      } catch (error) {
+        return json(res, 502, {
+          error: 'Consulta indisponivel.'
+        });
+      }
+    }
+
 
 
 
