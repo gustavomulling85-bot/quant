@@ -1,0 +1,97 @@
+name: Quant V6.1 - instalar memoria historica
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch seguro do motor
+        shell: bash
+        run: |
+          cat > /tmp/quant_v61_patch.py <<'PY_SCRIPT'
+          from pathlib import Path
+          p=Path('quant-unified-bot.js')
+          s=p.read_text()
+          if 'QUANT_V61_ARCHIVE' in s:
+           print('V6.1 already installed');raise SystemExit(0)
+          def change(a,b):
+           global s
+           if s.count(a)!=1: raise SystemExit('Exact anchor mismatch: '+repr(a[:90])+ ' count='+str(s.count(a)))
+           s=s.replace(a,b)
+          change("const now = () => new Date().toISOString();", """// QUANT_V61_ARCHIVE: only observation, never changes buy/sell conditions.
+          const V61_PREFIX='qv61-';
+          const v61id=(type,key)=>V61_PREFIX+type+'-'+crypto.createHash('sha256').update(String(key)).digest('hex').slice(0,32);
+          const v61pending=()=>Array.isArray(st.v61pending)?st.v61pending:(st.v61pending=[]);
+          function v61enqueue(type,key,record) {
+            const id=v61id(type,key);
+            const pending=v61pending();
+            if(!pending.some(x=>x.id===id)) pending.push({id,state:{version:'6.1',type,...record},updated_at:new Date().toISOString()});
+          }
+          async function v61flush() {
+            if(!qDatabaseReady||!v61pending().length) return;
+            for(const record of [...v61pending()].slice(0,6)) {
+              try {
+                await qRequest('POST','quant_runtime?on_conflict=id',[record]);
+                st.v61pending=st.v61pending.filter(x=>x.id!==record.id);
+              } catch(e) {
+                st.v61archiveError=String(e.message).slice(0,140);
+                break;
+              }
+            }
+          }
+          const now = () => new Date().toISOString();""")
+          change("    testTrades:[],\n    events:[],", "    testTrades:[],\n    v61pending:[],\n    events:[],")
+          change("    qDatabaseReady = true;\n    newDay();", """    qDatabaseReady = true;
+              // Backfill currently retained trades. Older overwritten trades are unrecoverable.
+              for(const t of st.trades) if(t.closedAt&&t.symbol) {
+                v61enqueue('trade',t.closedAt+'|'+t.symbol+'|'+t.openedAt,{trade:t,backfilled:true});
+              }
+              newDay();""")
+          change("  st.trades=st.trades.slice(0,500);", """  v61enqueue('trade',st.trades[0].closedAt+'|'+p.sym+'|'+p.openedAt,{trade:st.trades[0],backfilled:false});
+            st.trades=st.trades.slice(0,500);""")
+          change("  st.lastResults=results;\n  st.lastScan=now();", """  st.lastResults=results;
+            st.lastScan=now();
+            // Full signal snapshot (including rejected entries and why they were rejected).
+            // Stores only observed data; no hypothetical outcome claimed for rejected signals.
+            v61enqueue('scan',st.lastScan,{
+              observedAt:st.lastScan,
+              candidates:results.map(x=>({
+                symbol:x.sym,approved:x.approved,score:x.score,why:x.why,
+                checks:x.checks,spread:x.spread??null,
+                signalTime:x.signalTime??null,
+                memoryFeatures:x.memoryFeatures||null
+              }))
+            });""")
+          change("    await monitor();\n    await save();", """    await monitor();
+              await v61flush();
+              await save();""")
+          change("    storage:'Supabase permanente + cache Render',", """    storage:'Supabase permanente + cache Render',
+              v61Archive:{version:'6.1',pending:v61pending().length,lastError:st.v61archiveError||null},""")
+          change("    if(req.method!=='POST') {", """    if(req.method==='GET'&&url.pathname==='/api/quant-unified/memory-v61') {
+                const offset=Math.max(0,Math.min(100000,Number.parseInt(url.searchParams.get('offset')||'0',10)||0));
+                const kind=url.searchParams.get('kind')==='scan'?'scan':'trade';
+                const like=encodeURIComponent(V61_PREFIX+kind+'-*');
+                const rows=await qRequest('GET','quant_runtime?select=id,state,updated_at&id=like.'+like+'&order=updated_at.desc&limit=100&offset='+offset);
+                reply(res,200,{version:'6.1',kind,offset,rows:rows||[],pending:v61pending().length});
+                return true;
+              }
+
+              if(req.method!=='POST') {""")
+          p.write_text(s)
+          print('Patch applied, chars:',len(s))
+          PY_SCRIPT
+          python /tmp/quant_v61_patch.py
+          node --check quant-unified-bot.js
+      - name: Commit da memoria V6.1
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add quant-unified-bot.js
+          if ! git diff --cached --quiet; then
+            git commit -m "feat: archive V6.1 trades and rejected signals without changing strategy"
+            git push
+          fi
