@@ -1,0 +1,58 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quant V6.2 — Inteligência de Entradas</title>
+<style>:root{color-scheme:dark}*{box-sizing:border-box}body{background:#081526;color:#edf4ff;font:15px system-ui,sans-serif;margin:0}main{max-width:1050px;margin:auto;padding:18px}.box{background:#15283f;border:1px solid #355573;border-radius:15px;padding:17px;margin:14px 0}h1{font-size:1.65rem}h2{font-size:1.17rem}p,small{color:#b5c9df;line-height:1.6}label{display:block;margin:10px 0 5px}input,select{background:#08182a;border:1px solid #58718c;border-radius:9px;color:#fff;padding:12px;font:inherit;width:100%}button{background:#f8c638;color:#172439;padding:13px 17px;border:0;border-radius:9px;font-weight:800;cursor:pointer;margin:8px 7px 8px 0}button:disabled{opacity:.5}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:11px}.metric{background:#0a1b30;border:1px solid #3a5775;border-radius:10px;padding:13px}.metric strong{font-size:1.45rem;display:block}.red{color:#ff9b9b}.green{color:#6ce3b9}.scroll{overflow:auto}table{border-collapse:collapse;min-width:830px;width:100%}th,td{padding:10px;border-bottom:1px solid #3b516c;text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}a{color:#a6caff}.warn{border-left:3px solid #f9ca41;padding-left:12px}progress{width:100%}</style></head>
+<body><main><a href="/quant-unificado.html">← Robô virtual</a> · <a href="/quant-v61-memoria.html">Memória V6.1</a>
+<h1>🧠 Quant V6.2 — Inteligência de Entradas</h1><p>Auditoria estatística de compras encerradas. Não realiza negociações, não altera parâmetros nem grava dados. O PIN não é persistido no navegador.</p>
+<section class="box"><h2>Carregar memória histórica</h2><div class="grid"><div><label for="pin">PIN do Quant</label><input id="pin" type="password" autocomplete="off"></div><div><label for="coin">Moeda</label><select id="coin"><option value="">Todas as moedas</option></select></div><div><label for="score">Nota</label><select id="score"><option value="">Todas as notas</option><option value="100">100</option><option value="70">70–99</option></select></div></div>
+<button id="load">Ler histórico completo</button><button id="export" disabled>Exportar relatório CSV</button><progress id="progress" value="0" max="100"></progress><p id="status">Aguardando leitura.</p></section>
+<section class="box"><h2>Resumo das operações selecionadas</h2><div class="grid" id="summary"><div class="metric">Nenhum registro carregado.</div></div></section>
+<section class="box"><h2>Exploração e validação cronológica</h2><p>Os primeiros 70% dos registros com indicadores alimentam a exploração; os 30% mais recentes são uma checagem separada. A divisão é refeita para cada conjunto filtrado.</p><div class="grid" id="holdout"></div><p class="warn">Resultados históricos não demonstram que uma regra funcionará no futuro. Não há avaliação contrafactual das entradas rejeitadas, apenas das compras realizadas.</p></section>
+<section class="box"><h2>Condições no momento da entrada</h2><p>Compara a média dos indicadores nas operações que ganharam e nas que perderam. Uma diferença não prova causalidade.</p><div class="scroll"><table><thead><tr><th>Indicador</th><th>Vencedoras (média)</th><th>Perdedoras (média)</th><th>Com dado</th></tr></thead><tbody id="features"></tbody></table></div></section>
+<section class="box"><h2>Comparação de grupos</h2><p>Agrupamentos descritivos: todos os critérios foram definidos previamente, sem busca automática da combinação mais lucrativa.</p><div class="scroll"><table><thead><tr><th>Grupo</th><th>Operações</th><th>Acerto</th><th>Resultado líquido</th><th>Média/op.</th><th>Nota</th></tr></thead><tbody id="groups"></tbody></table></div></section>
+<section class="box"><h2>Como interpretar</h2><p>Dados com RSI, volume ou rompimento ausentes não entram na análise daquele indicador. O número de registros com indicadores pode ser menor que o total de operações. Sem um número suficiente de observações em exploração e validação, não é possível recomendar filtros novos.</p><p>A nota 100 não é garantia de lucro. Para avaliar entradas rejeitadas será necessário acompanhar seu resultado hipotético posterior, com janelas e custos idênticos aos das compras.</p></section></main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id),esc=x=>String(x??'—').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'),fmt=n=>Number.isFinite(n)?(n>=0?'+':'')+n.toFixed(4):'—';
+let trades=[],report=[];
+const mean=a=>a.length?a.reduce((s,n)=>s+n,0)/a.length:NaN;
+function stats(a){const good=a.filter(x=>x.net>0),bad=a.filter(x=>x.net<0);return{n:a.length,w:good.length,b:bad.length,total:a.reduce((s,x)=>s+x.net,0),avg:mean(a.map(x=>x.net)),rate:a.length?good.length/a.length*100:NaN};}
+function card(name,val,sub=''){return `<div class="metric"><small>${esc(name)}</small><strong>${esc(val)}</strong><small>${esc(sub)}</small></div>`;}
+function features(t){return t.memoryFeatures&&typeof t.memoryFeatures==='object'?t.memoryFeatures:null;}
+function number(v){return typeof v==='number'&&Number.isFinite(v)?v:NaN;}
+function draw(){
+ const coin=$('coin').value,score=$('score').value;
+ const t=trades.filter(x=>(!coin||x.symbol===coin)&&(!score||(score==='100'?x.score===100:x.score>=70&&x.score<100)));
+ const s=stats(t),en=t.filter(x=>features(x));
+ $('summary').innerHTML=[card('Operações',s.n),card('Com indicadores',en.length),card('Taxa de acerto',Number.isFinite(s.rate)?s.rate.toFixed(1)+'%':'—'),card('Resultado líquido',fmt(s.total)+' USDT'),card('Média por operação',fmt(s.avg)+' USDT')].join('');
+ const ordered=[...en].sort((a,b)=>String(a.closedAt||'').localeCompare(String(b.closedAt||'')));
+ const cut=Math.floor(ordered.length*.70);
+ const groups={explore:ordered.slice(0,cut),validate:ordered.slice(cut)};
+ $('holdout').innerHTML=[['Exploração',groups.explore],['Validação — dados posteriores',groups.validate]].map(([name,data])=>{const z=stats(data);return card(name,fmt(z.total)+' USDT',z.n+' operações · '+(Number.isFinite(z.rate)?z.rate.toFixed(1)+'%':'—')+' acerto · média '+fmt(z.avg));}).join('');
+ const defs=[['RSI','rsi'],['Volume relativo','volumeRatio'],['Rompimento (%)','breakoutPct'],['Distância da EMA21 (%)','ema21DistancePct'],['EMA9 1m','ema9_1m'],['EMA21 1m','ema21_1m'],['EMA9 5m','ema9_5m'],['EMA21 5m','ema21_5m']];
+ $('features').innerHTML=defs.map(([label,key])=>{const subset=en.filter(x=>Number.isFinite(number(features(x)[key]))),a=subset.filter(x=>x.net>0),b=subset.filter(x=>x.net<0);return `<tr><td>${esc(label)}</td><td>${fmt(mean(a.map(x=>features(x)[key])))}</td><td>${fmt(mean(b.map(x=>features(x)[key])))}</td><td>${subset.length}</td></tr>`}).join('');
+ const conds=[['Nota 100',x=>x.score===100],['Nota 70–99',x=>x.score>=70&&x.score<100],['RSI abaixo de 60',x=>number(features(x)?.rsi)<60],['RSI 60 ou mais',x=>number(features(x)?.rsi)>=60],['Volume ≥ 1,5×',x=>number(features(x)?.volumeRatio)>=1.5],['Volume abaixo de 1,5×',x=>number(features(x)?.volumeRatio)<1.5],['Rompimento > 0,1%',x=>number(features(x)?.breakoutPct)>0.1],['Rompimento ≤ 0,1%',x=>Number.isFinite(number(features(x)?.breakoutPct))&&features(x).breakoutPct<=0.1],['Tendência 5m confirmada',x=>features(x)?.trend5===true],['Tendência 5m não confirmada',x=>features(x)?.trend5===false]];
+ report=conds.map(([name,test])=>{const a=t.filter(test);return{name,...stats(a)}});
+ $('groups').innerHTML=report.map(g=>`<tr><td>${esc(g.name)}</td><td>${g.n}</td><td>${Number.isFinite(g.rate)?g.rate.toFixed(1)+'%':'—'}</td><td class="${g.total>=0?'green':'red'}">${fmt(g.total)}</td><td>${fmt(g.avg)}</td><td>${g.n<20?'Amostra pequena':'Descritivo'}</td></tr>`).join('');
+ $('export').disabled=!report.length;
+}
+async function read(){
+ const pin=$('pin').value.trim();if(!pin){$('status').textContent='Informe o PIN.';return}
+ $('load').disabled=true;$('export').disabled=true;trades=[];$('progress').value=2;
+ try{
+  let offset=0,more=true,pages=0;
+  while(more&&pages<50){
+   const resp=await fetch('/api/quant-unified/memory-v61?kind=trade&offset='+offset,{headers:{'x-quant-pin':pin},cache:'no-store'});
+   const obj=await resp.json();if(!resp.ok)throw Error(obj.error||'HTTP '+resp.status);
+   const rows=Array.isArray(obj.rows)?obj.rows:[],parsed=rows.map(r=>r.state?.trade).filter(x=>x&&Number.isFinite(x.net));
+   trades.push(...parsed);offset+=rows.length;pages++;more=rows.length===100;
+   $('status').textContent='Lidos '+offset+' registros…';$('progress').value=Math.min(95,pages*12);
+  }
+  const coins=[...new Set(trades.map(x=>x.symbol).filter(Boolean))].sort();
+  $('coin').innerHTML='<option value="">Todas as moedas</option>'+coins.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');
+  $('progress').value=100;draw();
+  $('status').textContent='Análise pronta: '+trades.length+' operações com resultado numérico. '+(pages===50?'Limite de 5.000 registros atingido.':'Histórico consultado.')+' Nenhuma configuração foi alterada.';
+ }catch(e){$('status').textContent='Falha na leitura: '+e.message}finally{$('load').disabled=false}
+}
+$('load').onclick=read;$('coin').onchange=draw;$('score').onchange=draw;
+$('export').onclick=()=>{const head=['grupo','operacoes','ganhos','perdas','taxa_acerto','total_usdt','media_usdt'];const rows=[head,...report.map(x=>[x.name,x.n,x.w,x.b,Number.isFinite(x.rate)?x.rate.toFixed(2):'',x.total.toFixed(4),Number.isFinite(x.avg)?x.avg.toFixed(4):''])];const csv=rows.map(row=>row.map(x=>'"'+String(x).replaceAll('"','""')+'"').join(',')).join('\r\n');const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='quant-v62-relatorio.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+</script></body></html>
