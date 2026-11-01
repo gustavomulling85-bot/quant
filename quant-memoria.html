@@ -1,0 +1,156 @@
+
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quant — Memória Estratégica</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{font:15px/1.5 system-ui;background:#091524;color:#e8f2ff;margin:0;padding:16px}
+main{max-width:950px;margin:auto}
+.panel{background:#162a42;border:1px solid #3b5978;border-radius:15px;padding:17px;margin:15px 0}
+input,button{font:inherit;padding:12px;border-radius:9px}
+input{background:#071a30;color:#fff;border:1px solid #56718e;max-width:340px;width:100%}
+button{background:#f6c62e;color:#101a27;border:0;font-weight:700;cursor:pointer}
+button:disabled{opacity:.5}
+small,p{color:#b9cadc}
+table{width:100%;border-collapse:collapse;min-width:660px}
+th,td{padding:9px;border-bottom:1px solid #35516e;text-align:right}
+th:first-child,td:first-child{text-align:left}
+.scroll{overflow-x:auto}
+a{color:#bddaff}
+</style>
+</head>
+<body>
+<main>
+<a href="/quant-unificado.html">← Painel principal</a>
+<h1>🧠 Quant — Memória Estratégica</h1>
+
+<section class="panel">
+<p>Consulta privada ao histórico de backtests. Os registros são exclusivamente de pesquisa. Esta página não envia ordens nem altera o robô.</p>
+
+<label for="pin">PIN administrativo</label>
+<p><input type="password" id="pin" autocomplete="off" placeholder="Digite seu PIN"></p>
+
+<button id="load">Consultar memória</button>
+<button id="clear" type="button">Limpar</button>
+<p id="status" role="status">Nenhuma consulta realizada.</p>
+</section>
+
+<section class="panel">
+<h2>Resultados armazenados</h2>
+<p id="overview"></p>
+<div class="scroll">
+<table>
+<thead>
+<tr>
+<th>Moeda</th>
+<th>Estratégia</th>
+<th>Operações</th>
+<th>Acerto</th>
+<th>Líquido (USDT)</th>
+<th>Decisão</th>
+</tr>
+</thead>
+<tbody id="rows">
+<tr>
+<td colspan="6">Consulte a memória para visualizar os dados.</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</main>
+
+<script>
+'use strict';
+
+const $=id=>document.getElementById(id);
+
+$('clear').onclick=()=>{
+ $('pin').value='';
+ $('rows').replaceChildren();
+ $('overview').textContent='';
+ $('status').textContent='Consulta limpa.';
+};
+
+$('load').onclick=async()=>{
+ const pin=$('pin').value;
+
+ if(!pin){
+  $('status').textContent='Informe o PIN.';
+  return;
+ }
+
+ $('load').disabled=true;
+ $('status').textContent='Consultando Supabase pelo servidor...';
+
+ try{
+  const res=await fetch('/api/quant/research',{
+   method:'GET',
+   headers:{'x-quant-pin':pin},
+   cache:'no-store'
+  });
+
+  if(!res.ok){
+   $('status').textContent=
+    res.status===401
+     ?'PIN inválido ou ausente.'
+     :'Erro HTTP '+res.status+' na consulta.';
+   return;
+  }
+
+  const data=await res.json();
+
+  if(!Array.isArray(data.records)){
+   throw Error('Resposta inesperada do servidor.');
+  }
+
+  $('rows').replaceChildren();
+
+  let total=0;
+  let operations=0;
+
+  for(const r of data.records){
+   const tr=document.createElement('tr');
+
+   const values=[
+    r.coin,
+    r.strategy,
+    r.operations,
+    Number(r.win_rate_pct).toFixed(1)+'%',
+    Number(r.net_usdt).toFixed(4),
+    r.decision
+   ];
+
+   for(const value of values){
+    const td=document.createElement('td');
+    td.textContent=String(value??'');
+    tr.appendChild(td);
+   }
+
+   $('rows').appendChild(tr);
+   total+=Number(r.net_usdt)||0;
+   operations+=Number(r.operations)||0;
+  }
+
+  $('overview').textContent=
+   data.records.length+' avaliações | '+
+   operations+' entradas simuladas | '+
+   total.toFixed(4)+' USDT somados entre estratégias alternativas.';
+
+  $('status').textContent=
+   'Consulta concluída. Somente leitura.';
+ }catch(err){
+  $('status').textContent=
+   'Falha na consulta: '+err.message;
+ }finally{
+  $('pin').value='';
+  $('load').disabled=false;
+ }
+};
+</script>
+</body>
+</html>
