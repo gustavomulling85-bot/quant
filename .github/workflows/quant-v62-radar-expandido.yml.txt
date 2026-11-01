@@ -1,0 +1,76 @@
+name: Quant V6.2 - ampliar radar de observacao
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Aplicar patch conservador
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('quant-unified-bot.js')
+          s=p.read_text()
+          if 'QUANT_V62_EXTRA_ASSETS' in s:
+              print('V6.2 ja instalado; sem alteracoes')
+              raise SystemExit(0)
+          old="""const DEFAULT = {"""
+          new="""// QUANT_V62_EXTRA_ASSETS: SOMENTE OBSERVACAO, nunca entram na carteira.
+          // Cinco simbolos extras por ciclo; os 20 sao cobertos em quatro ciclos.
+          const EXTRA_ASSETS = [
+            'ETC','FIL','ATOM','OP','INJ',
+            'SEI','PEPE','SHIB','TON','ICP',
+            'HBAR','ALGO','GRT','JUP','WIF',
+            'BONK','SAND','MANA','CRV','RENDER'
+          ];
+          const TRADEABLE_ASSETS = new Set(ASSETS);
+
+          const DEFAULT = {"""
+          if s.count(old)!=1: raise SystemExit('ERRO: ancora DEFAULT inesperada')
+          s=s.replace(old,new,1)
+          old="""  return ASSETS.map(sym=>{"""
+          new="""  // Observacao adicional em rodizio; limite de cinco moedas novas por scan.
+          const slot=Math.floor(Date.now()/SCAN_MS)%4;
+          const extra=EXTRA_ASSETS.slice(slot*5,slot*5+5);
+          return [...ASSETS,...extra].map(sym=>{"""
+          if s.count(old)!=1: raise SystemExit('ERRO: ancora universe inesperada')
+          s=s.replace(old,new,1)
+          old="""  const approved=results.filter(x=>x.approved)
+              .sort((a,b)=>b.score-a.score||a.spread-b.spread);"""
+          new="""  // Apenas as 20 moedas originais continuam autorizadas para compra.
+            const approved=results.filter(x=>x.approved&&TRADEABLE_ASSETS.has(x.sym))
+              .sort((a,b)=>b.score-a.score||a.spread-b.spread);"""
+          if s.count(old)!=1: raise SystemExit('ERRO: ancora approved inesperada')
+          s=s.replace(old,new,1)
+          old="""  st.stats.rejected+=results.length-approved.length;"""
+          new="""  st.stats.rejected+=results.filter(x=>TRADEABLE_ASSETS.has(x.sym)).length-approved.length;"""
+          if s.count(old)!=1: raise SystemExit('ERRO: ancora stats inesperada')
+          s=s.replace(old,new,1)
+          old="""    ' entradas elegiveis / 20 moedas | '+"""
+          new="""    ' entradas elegiveis / 20 negociaveis + 5 extras observadas | '+"""
+          if s.count(old)!=1: raise SystemExit('ERRO: ancora diagnostic inesperada')
+          s=s.replace(old,new,1)
+          p.write_text(s)
+          print('V6.2 instalado: 20 negociaveis, 20 extras em rodizio, 5 por ciclo')
+          PY
+          node --check quant-unified-bot.js
+      - name: Commit e push somente se houver mudanca
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add quant-unified-bot.js
+          if ! git diff --cached --quiet; then
+            git commit -m "Quant V6.2: observar 20 moedas extras sem novas compras"
+            git push
+          else
+            echo 'Nada a alterar'
+          fi
