@@ -1,0 +1,43 @@
+name: Quant V6.1 - corrigir arquivamento
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Separar memoria da carteira
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('quant-unified-bot.js')
+          s=p.read_text()
+          oldpost="'POST','quant_runtime?on_conflict=id',[record]"
+          newpost="'POST','quant_v61_archive?on_conflict=id',[record]"
+          oldget='quant_runtime?select=id,state,updated_at&id=like.'
+          newget='quant_v61_archive?select=id,state,updated_at&id=like.'
+          if newpost in s and newget in s:
+              print('Correcao ja aplicada')
+          else:
+              assert s.count(oldpost)==1, 'Trecho de gravacao nao encontrado'
+              assert s.count(oldget)==1, 'Trecho de leitura nao encontrado'
+              s=s.replace(oldpost,newpost).replace(oldget,newget)
+              p.write_text(s)
+              print('Gravacao e leitura transferidas para quant_v61_archive')
+          PY
+          node --check quant-unified-bot.js
+      - name: Registrar alteracao
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add quant-unified-bot.js
+          if git diff --cached --quiet; then
+            echo "Nada a alterar"
+          else
+            git commit -m "fix: archive V6.1 in dedicated Supabase table"
+            git push
+          fi
