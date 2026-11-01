@@ -1,0 +1,39 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Quant V6.3 — Auditoria de saídas</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#091424;color:#edf4ff;font:16px system-ui,Arial}main{max-width:950px;margin:auto;padding:16px}h1{font-size:1.6rem}h2{font-size:1.16rem}p{line-height:1.5;color:#bacce1}.panel{background:#162941;border:1px solid #3c5574;border-radius:14px;padding:16px;margin:14px 0}input,select{padding:12px;width:100%;background:#08182d;color:#fff;border:1px solid #5b748e;border-radius:9px;font:inherit}label{display:block;margin:7px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.metric{background:#081a2f;padding:12px;border:1px solid #385474;border-radius:10px}.metric small{color:#bdd0e6;display:block}.metric strong{display:block;margin:5px 0;font-size:1.25rem}.red{color:#ff9a9a}.green{color:#70e8af}button{border:0;border-radius:10px;background:#f5c434;color:#182034;font-weight:750;padding:13px;margin-top:12px}button:disabled{opacity:.5}.item{padding:12px 0;border-bottom:1px solid #385474}.item:last-child{border:0}a{color:#b2cfff}.warn{border-left:3px solid #f5c434;padding-left:12px}#status{overflow-wrap:anywhere}</style></head><body><main><a href="/quant-unificado.html">← Painel único</a><h1>🧠 Quant V6.3 — Auditoria das saídas</h1><p>Consulta a memória V6.1, sem executar compras, vendas ou alterações no robô.</p><section class="panel"><div class="grid"><div><label for="pin">PIN do Quant</label><input id="pin" type="password" autocomplete="off" placeholder="PIN"></div><div><label for="coin">Moeda</label><select id="coin"><option value="">Todas as moedas</option></select></div></div><button id="load">Analisar histórico completo</button><p id="status" role="status">Aguardando leitura.</p></section><section class="panel"><h2>Visão geral</h2><div class="grid" id="summary">Sem dados.</div></section><section class="panel"><h2>Por motivo de saída</h2><div id="reasons">Sem dados.</div></section><section class="panel"><h2>Quanto lucro foi devolvido?</h2><div class="grid" id="peaks">Sem dados.</div><p class="warn">Pico líquido significa maior valor observado pelo monitor, não máximo contínuo. Vender exatamente no pico não é uma hipótese de execução comprovada.</p></section><section class="panel"><h2>Evolução cronológica</h2><div class="grid" id="periods">Sem dados.</div><p>Comparação dos primeiros 70% e dos últimos 30% dos registros com indicadores. Não é validação de regras novas.</p></section><section class="panel"><h2>Próximo experimento</h2><p>Comparar a estratégia atual com confirmação obrigatória de tendência em 5 minutos, distância percentual da EMA e saídas baseadas em volatilidade. Novas regras devem ser verificadas com candles e simulação de taxas, spreads e slippage; picos históricos isolados não permitem reconstituir uma venda.</p><p><strong>Esta página apenas diagnostica.</strong> Nada aqui muda a carteira.</p></section></main><script>
+'use strict';
+const $=x=>document.getElementById(x);let all=[];
+const num=x=>typeof x==='number'&&Number.isFinite(x)?x:NaN;
+const sum=a=>a.reduce((v,x)=>v+x,0);
+const mean=a=>a.length?sum(a)/a.length:NaN;
+const money=n=>Number.isFinite(n)?(n>0?'+':'')+n.toFixed(4)+' USDT':'—';
+const percent=n=>Number.isFinite(n)?n.toFixed(1)+'%':'—';
+const safe=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+const stats=a=>({n:a.length,w:a.filter(x=>x.net>0).length,total:sum(a.map(x=>x.net)),avg:mean(a.map(x=>x.net))});
+const card=(a,b,c='')=>'<div class="metric"><small>'+safe(a)+'</small><strong>'+safe(b)+'</strong><small>'+safe(c)+'</small></div>';
+function draw(){
+ const coin=$('coin').value,t=all.filter(x=>!coin||x.symbol===coin),s=stats(t);
+ const withPeak=t.filter(x=>Number.isFinite(num(x.peakNet))),give=withPeak.filter(x=>x.peakNet>x.net),reversed=withPeak.filter(x=>x.peakNet>0&&x.net<=0),time=t.filter(x=>x.reason==='TEMPO_12M'),stop=t.filter(x=>x.reason==='STOP');
+ $('summary').innerHTML=[card('Operações',s.n),card('Acerto',percent(s.n?100*s.w/s.n:NaN)),card('Resultado líquido',money(s.total)),card('Média por operação',money(s.avg)),card('Fechadas por 12 minutos',time.length,money(stats(time).total)),card('Stops',stop.length,money(stats(stop).total))].join('');
+ const reasons=[...new Set(t.map(x=>x.reason||'Motivo ausente'))];
+ $('reasons').innerHTML=reasons.map(reason=>{const a=t.filter(x=>(x.reason||'Motivo ausente')===reason),r=stats(a);return '<div class="item"><b>'+safe(reason)+'</b><p>'+r.n+' operações · '+percent(r.n?r.w*100/r.n:NaN)+' acertos · média '+money(r.avg)+'</p><strong class="'+(r.total>=0?'green':'red')+'">'+money(r.total)+'</strong></div>'}).join('')||'<p>Sem operações.</p>';
+ $('peaks').innerHTML=[card('Pico registrado',withPeak.length),card('Pico positivo, saída ≤ zero',reversed.length),card('Devolução detectada',give.length),card('Devolução média observada',money(mean(give.map(x=>x.peakNet-x.net))))].join('');
+ const complete=t.filter(x=>x.memoryFeatures&&typeof x.memoryFeatures==='object').sort((a,b)=>String(a.closedAt||'').localeCompare(String(b.closedAt||''))),cut=Math.floor(complete.length*.7),first=stats(complete.slice(0,cut)),last=stats(complete.slice(cut));
+ $('periods').innerHTML=[card('Primeiros 70%',first.n+' registros',money(first.total)+' · '+percent(first.n?100*first.w/first.n:NaN)),card('Últimos 30%',last.n+' registros',money(last.total)+' · '+percent(last.n?100*last.w/last.n:NaN))].join('');
+}
+async function load(){
+ const pin=$('pin').value.trim();if(!pin){$('status').textContent='Informe o PIN.';return}
+ $('load').disabled=true;all=[];
+ try{
+ let offset=0,pages=0,more=true;
+ while(more&&pages<50){
+ const res=await fetch('/api/quant-unified/memory-v61?kind=trade&offset='+offset,{headers:{'x-quant-pin':pin},cache:'no-store'});
+ const data=await res.json();if(!res.ok)throw Error(data.error||'HTTP '+res.status);
+ const rows=Array.isArray(data.rows)?data.rows:[];all.push(...rows.map(x=>x.state&&x.state.trade).filter(x=>x&&Number.isFinite(num(x.net))));
+ pages++;offset+=rows.length;more=rows.length===100;
+ $('status').textContent='Consultando... '+offset+' registros.';
+ }
+ const coins=[...new Set(all.map(x=>x.symbol).filter(Boolean))].sort();$('coin').innerHTML='<option value="">Todas as moedas</option>'+coins.map(x=>'<option value="'+safe(x)+'">'+safe(x)+'</option>').join('');
+ draw();$('status').textContent='Pronto: '+all.length+' operações válidas. '+(pages===50?'Limite de 5.000 registros atingido.':'Histórico consultado.')+' Nenhuma configuração foi alterada.';
+ }catch(e){$('status').textContent='Erro: '+e.message}finally{$('load').disabled=false}
+}
+$('load').onclick=load;$('coin').onchange=draw;
+</script></body></html>
