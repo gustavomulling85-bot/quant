@@ -112,6 +112,17 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (await UNIFIED.handle(req, res, u)) {
+      return;
+    }
+
+    // COLE AQUI TODO O CÓDIGO
+    // MEMORIA ESTRATEGICA — SOMENTE LEITURA
+
+    // ======================================
+    // VERIFICACAO DO SERVIDOR
+    // ======================================
+
     // ======================================
     // VERIFICACAO DO SERVIDOR
     // ======================================
