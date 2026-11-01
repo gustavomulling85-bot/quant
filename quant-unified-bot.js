@@ -117,6 +117,27 @@ const TRAIL_GIVEBACK_NET = 0.03;
 const TRAIL_FLOOR_NET = 0.005;
 const ZONE = 'America/Sao_Paulo';
 
+// QUANT_V61_ARCHIVE: only observation, never changes buy/sell conditions.
+const V61_PREFIX='qv61-';
+const v61id=(type,key)=>V61_PREFIX+type+'-'+crypto.createHash('sha256').update(String(key)).digest('hex').slice(0,32);
+const v61pending=()=>Array.isArray(st.v61pending)?st.v61pending:(st.v61pending=[]);
+function v61enqueue(type,key,record) {
+  const id=v61id(type,key);
+  const pending=v61pending();
+  if(!pending.some(x=>x.id===id)) pending.push({id,state:{version:'6.1',type,...record},updated_at:new Date().toISOString()});
+}
+async function v61flush() {
+  if(!qDatabaseReady||!v61pending().length) return;
+  for(const record of [...v61pending()].slice(0,6)) {
+    try {
+      await qRequest('POST','quant_runtime?on_conflict=id',[record]);
+      st.v61pending=st.v61pending.filter(x=>x.id!==record.id);
+    } catch(e) {
+      st.v61archiveError=String(e.message).slice(0,140);
+      break;
+    }
+  }
+}
 const now = () => new Date().toISOString();
 const rnd = x => Number(Number(x).toFixed(6));
 
@@ -152,6 +173,7 @@ function blank() {
     positions:[],
     trades:[],
     testTrades:[],
+    v61pending:[],
     events:[],
     lastScan:null,
     lastAttempt:null,
@@ -311,6 +333,10 @@ async function load() {
     }
 
     qDatabaseReady = true;
+    // Backfill currently retained trades. Older overwritten trades are unrecoverable.
+    for(const t of st.trades) if(t.closedAt&&t.symbol) {
+      v61enqueue('trade',t.closedAt+'|'+t.symbol+'|'+t.openedAt,{trade:t,backfilled:true});
+    }
     newDay();
     await save();
     ready = true;
@@ -599,6 +625,7 @@ let reason=null;
     givebackNet:Number.isFinite(p.peakNet)
       ?Math.max(0,p.peakNet-net):null
   });
+  v61enqueue('trade',st.trades[0].closedAt+'|'+p.sym+'|'+p.openedAt,{trade:st.trades[0],backfilled:false});
   st.trades=st.trades.slice(0,500);
 
   log('VENDA FICTICIA '+p.sym+' '+rnd(net)+
@@ -668,6 +695,17 @@ async function scan() {
 
   st.lastResults=results;
   st.lastScan=now();
+  // Full signal snapshot (including rejected entries and why they were rejected).
+  // Stores only observed data; no hypothetical outcome claimed for rejected signals.
+  v61enqueue('scan',st.lastScan,{
+    observedAt:st.lastScan,
+    candidates:results.map(x=>({
+      symbol:x.sym,approved:x.approved,score:x.score,why:x.why,
+      checks:x.checks,spread:x.spread??null,
+      signalTime:x.signalTime??null,
+      memoryFeatures:x.memoryFeatures||null
+    }))
+  });
   st.stats.scans++;
 
   const approved=results.filter(x=>x.approved)
@@ -770,6 +808,7 @@ async function cycle() {
       throw Error('Supabase indisponivel');
     }
     await monitor();
+    await v61flush();
     await save();
 
     const reason=blocking();
@@ -816,6 +855,7 @@ function state() {
     simulation:true,
     realOrders:false,
     storage:'Supabase permanente + cache Render',
+    v61Archive:{version:'6.1',pending:v61pending().length,lastError:st.v61archiveError||null},
     system:'Agente Quant V5.2 - Scalping 70+',
     scanInterval:'1m',
     monitorInterval:'5s',
@@ -869,6 +909,15 @@ async function handle(req,res,url) {
     if(req.method==='GET'&&
        url.pathname==='/api/quant-unified/status') {
       reply(res,200,state());
+      return true;
+    }
+
+    if(req.method==='GET'&&url.pathname==='/api/quant-unified/memory-v61') {
+      const offset=Math.max(0,Math.min(100000,Number.parseInt(url.searchParams.get('offset')||'0',10)||0));
+      const kind=url.searchParams.get('kind')==='scan'?'scan':'trade';
+      const like=encodeURIComponent(V61_PREFIX+kind+'-*');
+      const rows=await qRequest('GET','quant_runtime?select=id,state,updated_at&id=like.'+like+'&order=updated_at.desc&limit=100&offset='+offset);
+      reply(res,200,{version:'6.1',kind,offset,rows:rows||[],pending:v61pending().length});
       return true;
     }
 
