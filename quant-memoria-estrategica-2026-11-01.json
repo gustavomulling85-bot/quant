@@ -1,0 +1,802 @@
+{
+  "recordType": "quant_backtest_evidence",
+  "recordId": "quant-v65-2026-11-01-21d-18coins",
+  "status": "QUARANTINED_UNVALIDATED",
+  "readOnly": true,
+  "requiresHumanApprovalForTradingChanges": true,
+  "sourceFiles": [
+    {
+      "file": "quant-v66-relatorio-2026-11-01.json",
+      "sha256": "a18049dc1d7174116447d899bbda37b7aac59b98bb54ebaff3f0e2a6ec6e0212"
+    },
+    {
+      "file": "quant-v66-entradas-2026-11-01.csv",
+      "sha256": "a4bda901913f01e8cdd16cc84c9eda00ce263fc11a13c1b866d06eabe507f6cd"
+    }
+  ],
+  "createdAt": "2026-11-01T17:35:03.475Z",
+  "sourceSimulator": "Quant V6.5 + exportador V6.6",
+  "parameters": {
+    "days": 21,
+    "volumeMin": 1.5,
+    "trend5m": true,
+    "stakeUSDT": 50,
+    "feePerSide": 0.001,
+    "slippagePerSide": 0.0003,
+    "spreadEstimated": 0.0004,
+    "exitCandles": 12
+  },
+  "coverage": {
+    "markets": 18,
+    "strategyPairs": 54,
+    "simulatedEntries": 15533,
+    "profitablePairs": 0,
+    "aggregateAlternativePnLUSDT": -2446.6331,
+    "timeoutPct": 87.12,
+    "errors": 0
+  },
+  "analysis": {
+    "finding": "Nenhuma das 54 combinacoes apresentou lucro líquido; não liberar para execução real.",
+    "dataQuality": [
+      "CSV e JSON descrevem as mesmas 15533 operações, não conjuntos independentes",
+      "Resultados por estratégia compartilham histórico e não equivalem a uma carteira única",
+      "Estratégia base aplica volume 1.10 e não volume 1.50 da interface",
+      "Saída por tempo domina 87.12% dos registros",
+      "Simulador tem modelos simplificados de stop/alvo/protecao e custos; corrigir e validar antes de treinar",
+      "Volume, RSI e tendência são úteis para investigação, não evidência de vantagem"
+    ],
+    "nextValidation": [
+      "Reprocessar mesmo período após correção contábil",
+      "Guardar versão imutável das regras, datas e custos",
+      "Separar período de ajuste e avaliação futura sem sobreposição",
+      "Comparar alternativas usando exposição, volume e mesmos critérios",
+      "Não alterar ordens reais sem aprovação explícita"
+    ]
+  },
+  "strategies": [
+    {
+      "coin": "BTC",
+      "strategy": "base",
+      "operations": 639,
+      "netUSDT": -100.226517,
+      "winRatePercent": 3.443,
+      "exitCounts": {
+        "TEMPO_12M": 628,
+        "STOP": 3,
+        "PROTECAO_LUCRO": 7,
+        "ALVO": 1
+      },
+      "timeoutPercent": 98.279
+    },
+    {
+      "coin": "BTC",
+      "strategy": "confirmed",
+      "operations": 218,
+      "netUSDT": -34.379322,
+      "winRatePercent": 3.67,
+      "exitCounts": {
+        "TEMPO_12M": 216,
+        "ALVO": 2
+      },
+      "timeoutPercent": 99.083
+    },
+    {
+      "coin": "BTC",
+      "strategy": "retest",
+      "operations": 184,
+      "netUSDT": -29.56591,
+      "winRatePercent": 2.174,
+      "exitCounts": {
+        "TEMPO_12M": 183,
+        "ALVO": 1
+      },
+      "timeoutPercent": 99.457
+    },
+    {
+      "coin": "ETH",
+      "strategy": "base",
+      "operations": 663,
+      "netUSDT": -103.502722,
+      "winRatePercent": 7.391,
+      "exitCounts": {
+        "TEMPO_12M": 625,
+        "PROTECAO_LUCRO": 18,
+        "ALVO": 10,
+        "STOP": 10
+      },
+      "timeoutPercent": 94.268
+    },
+    {
+      "coin": "ETH",
+      "strategy": "confirmed",
+      "operations": 219,
+      "netUSDT": -33.902496,
+      "winRatePercent": 7.763,
+      "exitCounts": {
+        "TEMPO_12M": 207,
+        "PROTECAO_LUCRO": 7,
+        "ALVO": 4,
+        "STOP": 1
+      },
+      "timeoutPercent": 94.521
+    },
+    {
+      "coin": "ETH",
+      "strategy": "retest",
+      "operations": 203,
+      "netUSDT": -31.620785,
+      "winRatePercent": 8.867,
+      "exitCounts": {
+        "TEMPO_12M": 192,
+        "PROTECAO_LUCRO": 5,
+        "ALVO": 4,
+        "STOP": 2
+      },
+      "timeoutPercent": 94.581
+    },
+    {
+      "coin": "SOL",
+      "strategy": "base",
+      "operations": 620,
+      "netUSDT": -97.673819,
+      "winRatePercent": 10.484,
+      "exitCounts": {
+        "TEMPO_12M": 566,
+        "PROTECAO_LUCRO": 26,
+        "STOP": 9,
+        "ALVO": 19
+      },
+      "timeoutPercent": 91.29
+    },
+    {
+      "coin": "SOL",
+      "strategy": "confirmed",
+      "operations": 195,
+      "netUSDT": -29.875388,
+      "winRatePercent": 11.282,
+      "exitCounts": {
+        "TEMPO_12M": 180,
+        "PROTECAO_LUCRO": 6,
+        "ALVO": 6,
+        "STOP": 3
+      },
+      "timeoutPercent": 92.308
+    },
+    {
+      "coin": "SOL",
+      "strategy": "retest",
+      "operations": 182,
+      "netUSDT": -29.033375,
+      "winRatePercent": 9.341,
+      "exitCounts": {
+        "TEMPO_12M": 168,
+        "PROTECAO_LUCRO": 4,
+        "ALVO": 7,
+        "STOP": 3
+      },
+      "timeoutPercent": 92.308
+    },
+    {
+      "coin": "BNB",
+      "strategy": "base",
+      "operations": 612,
+      "netUSDT": -91.138886,
+      "winRatePercent": 5.065,
+      "exitCounts": {
+        "TEMPO_12M": 593,
+        "STOP": 4,
+        "PROTECAO_LUCRO": 10,
+        "ALVO": 5
+      },
+      "timeoutPercent": 96.895
+    },
+    {
+      "coin": "BNB",
+      "strategy": "confirmed",
+      "operations": 230,
+      "netUSDT": -32.981251,
+      "winRatePercent": 5.652,
+      "exitCounts": {
+        "TEMPO_12M": 222,
+        "PROTECAO_LUCRO": 4,
+        "ALVO": 4
+      },
+      "timeoutPercent": 96.522
+    },
+    {
+      "coin": "BNB",
+      "strategy": "retest",
+      "operations": 203,
+      "netUSDT": -29.13863,
+      "winRatePercent": 6.404,
+      "exitCounts": {
+        "TEMPO_12M": 194,
+        "STOP": 1,
+        "PROTECAO_LUCRO": 6,
+        "ALVO": 2
+      },
+      "timeoutPercent": 95.567
+    },
+    {
+      "coin": "XRP",
+      "strategy": "base",
+      "operations": 583,
+      "netUSDT": -91.6384,
+      "winRatePercent": 9.091,
+      "exitCounts": {
+        "TEMPO_12M": 542,
+        "PROTECAO_LUCRO": 23,
+        "ALVO": 9,
+        "STOP": 9
+      },
+      "timeoutPercent": 92.967
+    },
+    {
+      "coin": "XRP",
+      "strategy": "confirmed",
+      "operations": 177,
+      "netUSDT": -29.797688,
+      "winRatePercent": 6.215,
+      "exitCounts": {
+        "TEMPO_12M": 169,
+        "PROTECAO_LUCRO": 4,
+        "STOP": 2,
+        "ALVO": 2
+      },
+      "timeoutPercent": 95.48
+    },
+    {
+      "coin": "XRP",
+      "strategy": "retest",
+      "operations": 160,
+      "netUSDT": -27.909351,
+      "winRatePercent": 5.625,
+      "exitCounts": {
+        "TEMPO_12M": 153,
+        "PROTECAO_LUCRO": 4,
+        "STOP": 1,
+        "ALVO": 2
+      },
+      "timeoutPercent": 95.625
+    },
+    {
+      "coin": "LINK",
+      "strategy": "base",
+      "operations": 556,
+      "netUSDT": -84.462345,
+      "winRatePercent": 16.547,
+      "exitCounts": {
+        "TEMPO_12M": 472,
+        "STOP": 28,
+        "PROTECAO_LUCRO": 34,
+        "ALVO": 22
+      },
+      "timeoutPercent": 84.892
+    },
+    {
+      "coin": "LINK",
+      "strategy": "confirmed",
+      "operations": 179,
+      "netUSDT": -28.801709,
+      "winRatePercent": 13.408,
+      "exitCounts": {
+        "TEMPO_12M": 154,
+        "PROTECAO_LUCRO": 12,
+        "ALVO": 6,
+        "STOP": 7
+      },
+      "timeoutPercent": 86.034
+    },
+    {
+      "coin": "LINK",
+      "strategy": "retest",
+      "operations": 173,
+      "netUSDT": -28.141875,
+      "winRatePercent": 15.607,
+      "exitCounts": {
+        "TEMPO_12M": 146,
+        "PROTECAO_LUCRO": 11,
+        "STOP": 9,
+        "ALVO": 7
+      },
+      "timeoutPercent": 84.393
+    },
+    {
+      "coin": "AVAX",
+      "strategy": "base",
+      "operations": 596,
+      "netUSDT": -93.92986,
+      "winRatePercent": 15.101,
+      "exitCounts": {
+        "TEMPO_12M": 516,
+        "STOP": 24,
+        "PROTECAO_LUCRO": 36,
+        "ALVO": 20
+      },
+      "timeoutPercent": 86.577
+    },
+    {
+      "coin": "AVAX",
+      "strategy": "confirmed",
+      "operations": 195,
+      "netUSDT": -30.732469,
+      "winRatePercent": 11.282,
+      "exitCounts": {
+        "TEMPO_12M": 176,
+        "STOP": 4,
+        "PROTECAO_LUCRO": 11,
+        "ALVO": 4
+      },
+      "timeoutPercent": 90.256
+    },
+    {
+      "coin": "AVAX",
+      "strategy": "retest",
+      "operations": 171,
+      "netUSDT": -26.59522,
+      "winRatePercent": 15.789,
+      "exitCounts": {
+        "TEMPO_12M": 150,
+        "STOP": 2,
+        "PROTECAO_LUCRO": 10,
+        "ALVO": 9
+      },
+      "timeoutPercent": 87.719
+    },
+    {
+      "coin": "ADA",
+      "strategy": "base",
+      "operations": 486,
+      "netUSDT": -83.30889,
+      "winRatePercent": 13.374,
+      "exitCounts": {
+        "TEMPO_12M": 423,
+        "ALVO": 14,
+        "PROTECAO_LUCRO": 26,
+        "STOP": 23
+      },
+      "timeoutPercent": 87.037
+    },
+    {
+      "coin": "ADA",
+      "strategy": "confirmed",
+      "operations": 132,
+      "netUSDT": -20.690251,
+      "winRatePercent": 11.364,
+      "exitCounts": {
+        "TEMPO_12M": 122,
+        "ALVO": 3,
+        "PROTECAO_LUCRO": 6,
+        "STOP": 1
+      },
+      "timeoutPercent": 92.424
+    },
+    {
+      "coin": "ADA",
+      "strategy": "retest",
+      "operations": 114,
+      "netUSDT": -18.52102,
+      "winRatePercent": 14.035,
+      "exitCounts": {
+        "ALVO": 4,
+        "TEMPO_12M": 101,
+        "PROTECAO_LUCRO": 7,
+        "STOP": 2
+      },
+      "timeoutPercent": 88.596
+    },
+    {
+      "coin": "DOGE",
+      "strategy": "base",
+      "operations": 553,
+      "netUSDT": -88.005773,
+      "winRatePercent": 9.403,
+      "exitCounts": {
+        "TEMPO_12M": 517,
+        "ALVO": 11,
+        "STOP": 11,
+        "PROTECAO_LUCRO": 14
+      },
+      "timeoutPercent": 93.49
+    },
+    {
+      "coin": "DOGE",
+      "strategy": "confirmed",
+      "operations": 190,
+      "netUSDT": -29.65627,
+      "winRatePercent": 8.947,
+      "exitCounts": {
+        "TEMPO_12M": 177,
+        "PROTECAO_LUCRO": 7,
+        "ALVO": 5,
+        "STOP": 1
+      },
+      "timeoutPercent": 93.158
+    },
+    {
+      "coin": "DOGE",
+      "strategy": "retest",
+      "operations": 173,
+      "netUSDT": -26.826711,
+      "winRatePercent": 9.827,
+      "exitCounts": {
+        "TEMPO_12M": 161,
+        "PROTECAO_LUCRO": 5,
+        "ALVO": 6,
+        "STOP": 1
+      },
+      "timeoutPercent": 93.064
+    },
+    {
+      "coin": "SUI",
+      "strategy": "base",
+      "operations": 582,
+      "netUSDT": -88.53415,
+      "winRatePercent": 19.072,
+      "exitCounts": {
+        "TEMPO_12M": 486,
+        "STOP": 27,
+        "ALVO": 28,
+        "PROTECAO_LUCRO": 41
+      },
+      "timeoutPercent": 83.505
+    },
+    {
+      "coin": "SUI",
+      "strategy": "confirmed",
+      "operations": 149,
+      "netUSDT": -22.255632,
+      "winRatePercent": 15.436,
+      "exitCounts": {
+        "TEMPO_12M": 131,
+        "STOP": 3,
+        "ALVO": 5,
+        "PROTECAO_LUCRO": 10
+      },
+      "timeoutPercent": 87.919
+    },
+    {
+      "coin": "SUI",
+      "strategy": "retest",
+      "operations": 177,
+      "netUSDT": -29.297052,
+      "winRatePercent": 19.209,
+      "exitCounts": {
+        "TEMPO_12M": 145,
+        "PROTECAO_LUCRO": 10,
+        "STOP": 11,
+        "ALVO": 11
+      },
+      "timeoutPercent": 81.921
+    },
+    {
+      "coin": "NEAR",
+      "strategy": "base",
+      "operations": 674,
+      "netUSDT": -117.214421,
+      "winRatePercent": 29.97,
+      "exitCounts": {
+        "STOP": 140,
+        "PROTECAO_LUCRO": 75,
+        "TEMPO_12M": 359,
+        "ALVO": 100
+      },
+      "timeoutPercent": 53.264
+    },
+    {
+      "coin": "NEAR",
+      "strategy": "confirmed",
+      "operations": 77,
+      "netUSDT": -10.177798,
+      "winRatePercent": 32.468,
+      "exitCounts": {
+        "TEMPO_12M": 48,
+        "PROTECAO_LUCRO": 8,
+        "STOP": 7,
+        "ALVO": 14
+      },
+      "timeoutPercent": 62.338
+    },
+    {
+      "coin": "NEAR",
+      "strategy": "retest",
+      "operations": 153,
+      "netUSDT": -22.675799,
+      "winRatePercent": 31.373,
+      "exitCounts": {
+        "ALVO": 29,
+        "TEMPO_12M": 85,
+        "STOP": 26,
+        "PROTECAO_LUCRO": 13
+      },
+      "timeoutPercent": 55.556
+    },
+    {
+      "coin": "LTC",
+      "strategy": "base",
+      "operations": 519,
+      "netUSDT": -84.497512,
+      "winRatePercent": 10.405,
+      "exitCounts": {
+        "TEMPO_12M": 470,
+        "ALVO": 5,
+        "STOP": 17,
+        "PROTECAO_LUCRO": 27
+      },
+      "timeoutPercent": 90.559
+    },
+    {
+      "coin": "LTC",
+      "strategy": "confirmed",
+      "operations": 161,
+      "netUSDT": -26.244939,
+      "winRatePercent": 7.453,
+      "exitCounts": {
+        "TEMPO_12M": 150,
+        "PROTECAO_LUCRO": 7,
+        "STOP": 3,
+        "ALVO": 1
+      },
+      "timeoutPercent": 93.168
+    },
+    {
+      "coin": "LTC",
+      "strategy": "retest",
+      "operations": 136,
+      "netUSDT": -23.233281,
+      "winRatePercent": 7.353,
+      "exitCounts": {
+        "TEMPO_12M": 129,
+        "PROTECAO_LUCRO": 4,
+        "STOP": 3
+      },
+      "timeoutPercent": 94.853
+    },
+    {
+      "coin": "TRX",
+      "strategy": "base",
+      "operations": 447,
+      "netUSDT": -67.543076,
+      "winRatePercent": 2.237,
+      "exitCounts": {
+        "TEMPO_12M": 430,
+        "STOP": 7,
+        "ALVO": 8,
+        "PROTECAO_LUCRO": 2
+      },
+      "timeoutPercent": 96.197
+    },
+    {
+      "coin": "TRX",
+      "strategy": "confirmed",
+      "operations": 187,
+      "netUSDT": -27.824342,
+      "winRatePercent": 0.535,
+      "exitCounts": {
+        "TEMPO_12M": 186,
+        "ALVO": 1
+      },
+      "timeoutPercent": 99.465
+    },
+    {
+      "coin": "TRX",
+      "strategy": "retest",
+      "operations": 115,
+      "netUSDT": -16.389905,
+      "winRatePercent": 2.609,
+      "exitCounts": {
+        "TEMPO_12M": 112,
+        "ALVO": 2,
+        "STOP": 1
+      },
+      "timeoutPercent": 97.391
+    },
+    {
+      "coin": "UNI",
+      "strategy": "base",
+      "operations": 594,
+      "netUSDT": -93.739184,
+      "winRatePercent": 23.064,
+      "exitCounts": {
+        "TEMPO_12M": 441,
+        "STOP": 50,
+        "ALVO": 53,
+        "PROTECAO_LUCRO": 50
+      },
+      "timeoutPercent": 74.242
+    },
+    {
+      "coin": "UNI",
+      "strategy": "confirmed",
+      "operations": 133,
+      "netUSDT": -19.968275,
+      "winRatePercent": 20.301,
+      "exitCounts": {
+        "TEMPO_12M": 103,
+        "STOP": 6,
+        "PROTECAO_LUCRO": 12,
+        "ALVO": 12
+      },
+      "timeoutPercent": 77.444
+    },
+    {
+      "coin": "UNI",
+      "strategy": "retest",
+      "operations": 169,
+      "netUSDT": -24.791185,
+      "winRatePercent": 25.444,
+      "exitCounts": {
+        "TEMPO_12M": 117,
+        "STOP": 16,
+        "ALVO": 21,
+        "PROTECAO_LUCRO": 15
+      },
+      "timeoutPercent": 69.231
+    },
+    {
+      "coin": "AAVE",
+      "strategy": "base",
+      "operations": 589,
+      "netUSDT": -93.21731,
+      "winRatePercent": 19.864,
+      "exitCounts": {
+        "TEMPO_12M": 479,
+        "PROTECAO_LUCRO": 49,
+        "STOP": 33,
+        "ALVO": 28
+      },
+      "timeoutPercent": 81.324
+    },
+    {
+      "coin": "AAVE",
+      "strategy": "confirmed",
+      "operations": 139,
+      "netUSDT": -21.142313,
+      "winRatePercent": 20.863,
+      "exitCounts": {
+        "TEMPO_12M": 119,
+        "PROTECAO_LUCRO": 15,
+        "ALVO": 2,
+        "STOP": 3
+      },
+      "timeoutPercent": 85.612
+    },
+    {
+      "coin": "AAVE",
+      "strategy": "retest",
+      "operations": 149,
+      "netUSDT": -21.951488,
+      "winRatePercent": 24.161,
+      "exitCounts": {
+        "TEMPO_12M": 112,
+        "STOP": 12,
+        "PROTECAO_LUCRO": 12,
+        "ALVO": 13
+      },
+      "timeoutPercent": 75.168
+    },
+    {
+      "coin": "DOT",
+      "strategy": "base",
+      "operations": 526,
+      "netUSDT": -83.117818,
+      "winRatePercent": 22.433,
+      "exitCounts": {
+        "TEMPO_12M": 394,
+        "PROTECAO_LUCRO": 45,
+        "ALVO": 48,
+        "STOP": 39
+      },
+      "timeoutPercent": 74.905
+    },
+    {
+      "coin": "DOT",
+      "strategy": "confirmed",
+      "operations": 113,
+      "netUSDT": -15.733626,
+      "winRatePercent": 19.469,
+      "exitCounts": {
+        "TEMPO_12M": 93,
+        "PROTECAO_LUCRO": 5,
+        "ALVO": 10,
+        "STOP": 5
+      },
+      "timeoutPercent": 82.301
+    },
+    {
+      "coin": "DOT",
+      "strategy": "retest",
+      "operations": 105,
+      "netUSDT": -14.416103,
+      "winRatePercent": 27.619,
+      "exitCounts": {
+        "TEMPO_12M": 70,
+        "PROTECAO_LUCRO": 8,
+        "ALVO": 17,
+        "STOP": 10
+      },
+      "timeoutPercent": 66.667
+    },
+    {
+      "coin": "ATOM",
+      "strategy": "base",
+      "operations": 486,
+      "netUSDT": -78.400696,
+      "winRatePercent": 15.226,
+      "exitCounts": {
+        "TEMPO_12M": 425,
+        "PROTECAO_LUCRO": 24,
+        "STOP": 18,
+        "ALVO": 19
+      },
+      "timeoutPercent": 87.449
+    },
+    {
+      "coin": "ATOM",
+      "strategy": "confirmed",
+      "operations": 129,
+      "netUSDT": -19.940393,
+      "winRatePercent": 17.054,
+      "exitCounts": {
+        "TEMPO_12M": 116,
+        "PROTECAO_LUCRO": 7,
+        "ALVO": 5,
+        "STOP": 1
+      },
+      "timeoutPercent": 89.922
+    },
+    {
+      "coin": "ATOM",
+      "strategy": "retest",
+      "operations": 71,
+      "netUSDT": -11.008608,
+      "winRatePercent": 18.31,
+      "exitCounts": {
+        "TEMPO_12M": 56,
+        "PROTECAO_LUCRO": 5,
+        "STOP": 5,
+        "ALVO": 5
+      },
+      "timeoutPercent": 78.873
+    },
+    {
+      "coin": "ETC",
+      "strategy": "base",
+      "operations": 256,
+      "netUSDT": -45.156028,
+      "winRatePercent": 7.812,
+      "exitCounts": {
+        "TEMPO_12M": 238,
+        "STOP": 7,
+        "ALVO": 6,
+        "PROTECAO_LUCRO": 5
+      },
+      "timeoutPercent": 92.969
+    },
+    {
+      "coin": "ETC",
+      "strategy": "confirmed",
+      "operations": 73,
+      "netUSDT": -12.209428,
+      "winRatePercent": 8.219,
+      "exitCounts": {
+        "TEMPO_12M": 69,
+        "ALVO": 3,
+        "STOP": 1
+      },
+      "timeoutPercent": 94.521
+    },
+    {
+      "coin": "ETC",
+      "strategy": "retest",
+      "operations": 18,
+      "netUSDT": -3.895822,
+      "winRatePercent": 0,
+      "exitCounts": {
+        "TEMPO_12M": 17,
+        "STOP": 1
+      },
+      "timeoutPercent": 94.444
+    }
+  ]
+}
