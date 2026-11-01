@@ -130,7 +130,7 @@ async function v61flush() {
   if(!qDatabaseReady||!v61pending().length) return;
   for(const record of [...v61pending()].slice(0,6)) {
     try {
-      await qRequest('POST','quant_runtime?on_conflict=id',[record]);
+      await qRequest('POST','quant_v61_archive?on_conflict=id',[record]);
       st.v61pending=st.v61pending.filter(x=>x.id!==record.id);
     } catch(e) {
       st.v61archiveError=String(e.message).slice(0,140);
@@ -916,7 +916,7 @@ async function handle(req,res,url) {
       const offset=Math.max(0,Math.min(100000,Number.parseInt(url.searchParams.get('offset')||'0',10)||0));
       const kind=url.searchParams.get('kind')==='scan'?'scan':'trade';
       const like=encodeURIComponent(V61_PREFIX+kind+'-*');
-      const rows=await qRequest('GET','quant_runtime?select=id,state,updated_at&id=like.'+like+'&order=updated_at.desc&limit=100&offset='+offset);
+      const rows=await qRequest('GET','quant_v61_archive?select=id,state,updated_at&id=like.'+like+'&order=updated_at.desc&limit=100&offset='+offset);
       reply(res,200,{version:'6.1',kind,offset,rows:rows||[],pending:v61pending().length});
       return true;
     }
