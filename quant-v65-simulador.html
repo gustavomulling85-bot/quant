@@ -338,3 +338,260 @@ $('run').onclick=async()=>{
 </script>
 </body>
 </html>
+
+<script>
+/* Quant V6.6 — exportação estratégica */
+(()=>{
+'use strict';
+
+const coins=[
+'BTC','ETH','SOL','BNB','XRP','LINK',
+'AVAX','ADA','DOGE','SUI','NEAR','LTC',
+'TRX','UNI','AAVE','DOT','ATOM','ETC'
+];
+
+const section=document.createElement('section');
+section.className='box';
+section.innerHTML=`
+<h2>📊 Quant V6.6 — Memória estratégica</h2>
+<p>Análise automática das 18 moedas, com três estratégias por moeda. Somente simulação.</p>
+<button id="qAll">Analisar todas as 18 moedas</button>
+<button id="qOne">Analisar moeda selecionada</button>
+<button id="qJson" disabled>Exportar JSON completo</button>
+<button id="qCsv" disabled>Exportar CSV das entradas</button>
+<p id="qStatus" role="status">Escolha uma opção para iniciar.</p>
+<div class="scroll">
+<table>
+<thead>
+<tr>
+<th>Moeda</th><th>Estratégia</th>
+<th>Entradas</th><th>Acerto</th><th>Líquido</th>
+</tr>
+</thead>
+<tbody id="qRows">
+<tr><td colspan="5">Sem análises.</td></tr>
+</tbody>
+</table>
+</div>`;
+
+const base=document.getElementById('split').closest('section');
+base.parentElement.insertBefore(section,base);
+
+const el=id=>document.getElementById(id);
+let report=null;
+
+function download(name,contents,mime){
+ const url=URL.createObjectURL(
+  new Blob([contents],{type:mime})
+ );
+ const a=document.createElement('a');
+ a.href=url;
+ a.download=name;
+ document.body.appendChild(a);
+ a.click();
+ a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),5000);
+}
+
+function csvCell(value){
+ return '"'+String(value??'').replaceAll('"','""')+'"';
+}
+
+function exportData(asCsv){
+ if(!report)return;
+
+ const stamp=report.createdAt.slice(0,10);
+
+ if(!asCsv){
+  download(
+   'quant-v66-relatorio-'+stamp+'.json',
+   JSON.stringify(report,null,2),
+   'application/json;charset=utf-8'
+  );
+  return;
+ }
+
+ const fields=[
+ 'coin','strategy','signalTime','entryTime',
+ 'exitTime','entryPrice','signalVolume',
+ 'volumeRatio','rsi','trend5m','netUSDT',
+ 'exitReason'
+ ];
+
+ const rows=[fields.join(',')];
+
+ for(const m of report.markets){
+  for(const strategy of m.strategies){
+   for(const t of strategy.entries){
+    const data={
+     coin:m.coin,
+     strategy:strategy.key,
+     ...t
+    };
+    rows.push(
+     fields.map(k=>csvCell(data[k])).join(',')
+    );
+   }
+  }
+ }
+
+ download(
+  'quant-v66-entradas-'+stamp+'.csv',
+  '\uFEFF'+rows.join('\r\n'),
+  'text/csv;charset=utf-8'
+ );
+}
+
+el('qJson').onclick=()=>exportData(false);
+el('qCsv').onclick=()=>exportData(true);
+
+async function execute(all){
+ const chosen=all?coins:[el('coin').value];
+ const days=Number(el('days').value);
+ const vol=Number(el('vol').value);
+ const trend=el('trend').value==='1';
+
+ const end=Math.floor(Date.now()/60000)*60000;
+ const start=end-days*86400000;
+
+ el('qAll').disabled=true;
+ el('qOne').disabled=true;
+ el('qJson').disabled=true;
+ el('qCsv').disabled=true;
+
+ report={
+  schema:'quant-strategic-report-v1',
+  simulator:'Quant V6.5 + exportador V6.6',
+  createdAt:new Date().toISOString(),
+  config:{
+   days,
+   volumeMin:vol,
+   trend5m:trend,
+   stakeUSDT:stake,
+   feePerSide:fee,
+   slippagePerSide:slip,
+   spreadEstimated:spread,
+   exitCandles:delay
+  },
+  markets:[],
+  errors:[]
+ };
+
+ el('qRows').innerHTML='';
+
+ try{
+  for(let i=0;i<chosen.length;i++){
+   const coin=chosen[i];
+
+   el('qStatus').textContent=
+    `Analisando ${coin} (${i+1}/${chosen.length})...`;
+
+   try{
+    const a=await candles(coin,start,end);
+
+    if(a.length<500){
+     throw Error('Poucos candles: '+a.length);
+    }
+
+    const f=features(a);
+    const sign=signals(a,f,vol,trend);
+
+    const names={
+     base:'Rompimento 1m',
+     confirmed:'Confirmado',
+     retest:'Reteste'
+    };
+
+    const market={
+     coin,
+     candles:a.length,
+     firstCandle:a[0].t,
+     lastCandle:a[a.length-1].t,
+     strategies:[]
+    };
+
+    for(const key of Object.keys(names)){
+     const trades=simulate(a,sign[key]);
+     const m=metrics(trades);
+
+     const signalByEntry=new Map(
+      sign[key].map(s=>[a[s.entry]?.t,s])
+     );
+
+     const entries=trades.map(t=>{
+      const s=signalByEntry.get(t.entryAt);
+      const j=s?.signal;
+
+      const preceding=j===undefined
+       ?null
+       :a.slice(Math.max(0,j-20),j);
+
+      const avgVolume=preceding?.length
+       ?mean(preceding.map(x=>x.v))
+       :null;
+
+      return {
+       signalTime:j===undefined
+        ?null:new Date(a[j].t).toISOString(),
+       entryTime:new Date(t.entryAt).toISOString(),
+       exitTime:new Date(t.closedAt).toISOString(),
+       entryPrice:s?a[s.entry].o:null,
+       signalVolume:j===undefined?null:a[j].v,
+       volumeRatio:avgVolume
+        ?+(a[j].v/avgVolume).toFixed(5):null,
+       rsi:j===undefined
+        ?null:+f.rs[j].toFixed(4),
+       trend5m:j===undefined?null:f.trend[j],
+       netUSDT:t.net,
+       exitReason:t.reason
+      };
+     });
+
+     market.strategies.push({
+      key,
+      name:names[key],
+      metrics:m,
+      entries
+     });
+
+     const tr=document.createElement('tr');
+
+     for(const value of [
+      coin,names[key],m.n,pct(m.rate),fmt(m.total)
+     ]){
+      const td=document.createElement('td');
+      td.textContent=String(value);
+      tr.appendChild(td);
+     }
+
+     el('qRows').appendChild(tr);
+    }
+
+    report.markets.push(market);
+
+   }catch(err){
+    report.errors.push({
+     coin,
+     message:String(err?.message||err)
+    });
+   }
+  }
+ }finally{
+  el('qAll').disabled=false;
+  el('qOne').disabled=false;
+
+  const ready=report.markets.length>0;
+
+  el('qJson').disabled=!ready;
+  el('qCsv').disabled=!ready;
+
+  el('qStatus').textContent=
+   `Concluído: ${report.markets.length}/${chosen.length} moedas. Falhas: ${report.errors.length}. Exporte o relatório.`;
+ }
+}
+
+el('qAll').onclick=()=>execute(true);
+el('qOne').onclick=()=>execute(false);
+
+})();
+</script>
