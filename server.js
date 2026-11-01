@@ -112,15 +112,10 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if (await UNIFIED.handle(req, res, u)) {
-      return;
-    }
 
 
 
-    // ======================================
-    // VERIFICACAO DO SERVIDOR
-    // ======================================
+
 
     // ======================================
     // VERIFICACAO DO SERVIDOR
