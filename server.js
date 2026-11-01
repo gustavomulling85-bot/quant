@@ -116,8 +116,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // COLE AQUI TODO O CÓDIGO
-    // MEMORIA ESTRATEGICA — SOMENTE LEITURA
+
 
     // ======================================
     // VERIFICACAO DO SERVIDOR
