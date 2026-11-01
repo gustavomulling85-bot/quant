@@ -90,6 +90,16 @@ const ASSETS = [
   'DOT','APT','ARB','AAVE','XLM'
 ];
 
+// QUANT_V62_EXTRA_ASSETS: SOMENTE OBSERVACAO, nunca entram na carteira.
+// Cinco simbolos extras por ciclo; os 20 sao cobertos em quatro ciclos.
+const EXTRA_ASSETS = [
+  'ETC','FIL','ATOM','OP','INJ',
+  'SEI','PEPE','SHIB','TON','ICP',
+  'HBAR','ALGO','GRT','JUP','WIF',
+  'BONK','SAND','MANA','CRV','RENDER'
+];
+const TRADEABLE_ASSETS = new Set(ASSETS);
+
 const DEFAULT = {
   enabled:false,
   stake:50,
@@ -552,7 +562,10 @@ async function universe() {
     x.symbol,{ask:+x.askPrice,bid:+x.bidPrice}
   ]));
 
-  return ASSETS.map(sym=>{
+  // Observacao adicional em rodizio; limite de cinco moedas novas por scan.
+const slot=Math.floor(Date.now()/SCAN_MS)%4;
+const extra=EXTRA_ASSETS.slice(slot*5,slot*5+5);
+return [...ASSETS,...extra].map(sym=>{
     const key=sym+'USDT',quote=quotes.get(key);
     const spread=quote?.ask>0&&quote?.bid>0
       ? 100*(quote.ask-quote.bid)/((quote.ask+quote.bid)/2)
@@ -708,7 +721,8 @@ async function scan() {
   });
   st.stats.scans++;
 
-  const approved=results.filter(x=>x.approved)
+  // Apenas as 20 moedas originais continuam autorizadas para compra.
+  const approved=results.filter(x=>x.approved&&TRADEABLE_ASSETS.has(x.sym))
     .sort((a,b)=>b.score-a.score||a.spread-b.spread);
 
   const candidates=approved.filter(x=>
@@ -717,7 +731,7 @@ async function scan() {
   );
 
   st.stats.signals+=approved.length;
-  st.stats.rejected+=results.length-approved.length;
+  st.stats.rejected+=results.filter(x=>TRADEABLE_ASSETS.has(x.sym)).length-approved.length;
 
   const highlights=[...results]
     .sort((a,b)=>(b.score||0)-(a.score||0))
@@ -726,7 +740,7 @@ async function scan() {
     .join(' | ');
 
   st.diagnostic=candidates.length+
-    ' entradas elegiveis / 20 moedas | '+
+    ' entradas elegiveis / 20 negociaveis + 5 extras observadas | '+
     'Destaques: '+highlights;
 
   if(approved.length) {
