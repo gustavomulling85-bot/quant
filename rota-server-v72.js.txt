@@ -1,0 +1,47 @@
+    // QUANT V7.2 — Pesquisa privada, sem ordens.
+    if (u.pathname === '/api/quant-v72/validate' && req.method === 'POST') {
+      if (!pinValid(req.headers['x-quant-pin'])) {
+        return json(res, 401, { error: 'PIN invalido' });
+      }
+      const input = await readBody(req, 1024);
+      const symbol = String(input.symbol || '').toUpperCase();
+      const side = String(input.side || '').toUpperCase();
+      const stop = Number(input.stop_pct);
+      const target = Number(input.target_pct);
+      const cost = Number(input.cost_usdt);
+      if (!SYMBOLS.has(symbol) || !['LONG','SHORT'].includes(side) ||
+          !Number.isFinite(stop) || stop < 0.05 || stop > 10 ||
+          !Number.isFinite(target) || target < 0.05 || target > 20 ||
+          !Number.isFinite(cost) || cost < 0 || cost > 2) {
+        return json(res, 400, { error: 'Parametros invalidos' });
+      }
+      const base = process.env.SUPABASE_URL?.replace(/\/$/, '');
+      const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (!base || !key) return json(res, 503, { error: 'Banco indisponivel' });
+      try {
+        const result = await fetch(base + '/rest/v1/rpc/quant_v72_validate', {
+          method: 'POST',
+          headers: {
+            apikey: key, Authorization: 'Bearer ' + key,
+            'Content-Type': 'application/json', Accept: 'application/json'
+          },
+          body: JSON.stringify({
+            p_symbol: symbol + 'USDT', p_side: side,
+            p_stop_pct: stop, p_target_pct: target, p_cost_usdt: cost
+          }),
+          signal: AbortSignal.timeout(30000)
+        });
+        if (!result.ok) {
+          return json(res, 502, {
+            error: 'Falha na pesquisa V7.2', status: result.status
+          });
+        }
+        return json(res, 200, {
+          module: 'QUANT_V72', mode: 'RESEARCH_ONLY',
+          realOrders: false, symbol, side,
+          results: await result.json()
+        });
+      } catch {
+        return json(res, 502, { error: 'Pesquisa indisponivel' });
+      }
+    }
