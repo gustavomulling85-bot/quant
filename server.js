@@ -112,6 +112,34 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+// QUANT V7.4: filtros de qualidade da entrada. Apenas pesquisa.
+if (u.pathname === '/api/quant-v74/quality' && req.method === 'POST') {
+  if (!pinValid(req.headers['x-quant-pin'])) return json(res, 401, { error: 'PIN invalido' });
+  const input = await readBody(req, 1024);
+  const symbol = String(input.symbol || '').toUpperCase();
+  const cost = Number(input.cost_usdt);
+  if (!SYMBOLS.has(symbol) || !Number.isFinite(cost) || cost < 0 || cost > 2) {
+    return json(res, 400, { error: 'Parametros invalidos' });
+  }
+  const base = process.env.SUPABASE_URL?.replace(/\/$/, '');
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!base || !key) return json(res, 503, { error: 'Banco indisponivel' });
+  try {
+    const response = await fetch(base + '/rest/v1/rpc/quant_v74_signal_quality', {
+      method: 'POST',
+      headers: { apikey: key, Authorization: 'Bearer ' + key,
+        'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ p_symbol: symbol + 'USDT', p_cost: cost }),
+      signal: AbortSignal.timeout(30000)
+    });
+    if (!response.ok) return json(res, 502, { error: 'Falha V7.4 (Supabase HTTP ' + response.status + ')' });
+    return json(res, 200, { module: 'QUANT_V74', mode: 'RESEARCH_ONLY', realOrders: false,
+      symbol, results: await response.json() });
+  } catch (error) {
+    return json(res, 502, { error: 'Consulta V7.4 indisponivel ou expirou' });
+  }
+}
+
 // QUANT V7.3: Pesquisa somente leitura, sem ordens.
 if (u.pathname === '/api/quant-v73/optimize' && req.method === 'POST') {
   if (!pinValid(req.headers['x-quant-pin'])) {
