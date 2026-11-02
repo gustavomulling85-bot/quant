@@ -268,10 +268,12 @@ const button = $(
           'Content-Type': 'application/json',
           'x-quant-pin': pin
         },
+        
         ...(action === 'start'
-          ? {body: JSON.stringify({scope: 'BTC'})}
+          ? {body: JSON.stringify({scope})}
           : {}),
         cache: 'no-store'
+
       }
     );
 
