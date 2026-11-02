@@ -1,0 +1,208 @@
+
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quant V7 - Comparador</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{background:#091524;color:#edf3fc;font:15px/1.5 system-ui;padding:18px;margin:0}
+main{max-width:950px;margin:auto}
+section{background:#172b43;border:1px solid #385b7e;border-radius:16px;padding:20px;margin:20px 0}
+h1{font-size:26px}
+input,button{padding:14px;font:inherit;border-radius:10px;max-width:100%}
+input{background:#07192e;color:white;border:1px solid #54708e}
+button{background:#ffca2c;color:#091524;font-weight:bold;border:0;margin-top:12px}
+button:disabled{opacity:.5}
+p,small{color:#bdccdf}
+a{color:#badcff}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;min-width:680px;width:100%}
+td,th{padding:10px;text-align:right;border-bottom:1px solid #36516d}
+td:first-child,th:first-child{text-align:left}
+.good{color:#8ee1ad}
+.bad{color:#ff8585}
+</style>
+</head>
+<body>
+<main>
+<a href="/quant-laboratorio-v7.html">← Voltar ao laboratório</a>
+<h1>🧠 Quant V7 — Comparador</h1>
+<p>60 pesquisas históricas, sem executar compras.</p>
+
+<section>
+<label for="pin">PIN administrativo</label>
+<p><input id="pin" type="password" autocomplete="off"></p>
+<button id="start">Comparar as 20 moedas</button>
+<p id="status">Pronto para iniciar.</p>
+<small>Mantenha esta página aberta durante a pesquisa.</small>
+</section>
+
+<section>
+<h2>Resultado das estratégias</h2>
+<p>Posição hipotética: 50 USDT. Saída após 12 minutos. Custo estimado: 0,16 USDT.</p>
+<div class="scroll">
+<table>
+<thead>
+<tr>
+<th>Moeda</th>
+<th>Cenário</th>
+<th>Amostra</th>
+<th>Média USDT</th>
+<th>Positivos</th>
+</tr>
+</thead>
+<tbody id="rows"></tbody>
+</table>
+</div>
+<p id="summary"></p>
+<small>
+Resultados históricos simplificados, sem stops, alvos
+ou validação fora da amostra. Não são sinais de compra.
+</small>
+</section>
+</main>
+
+<script>
+'use strict';
+
+const $ = id => document.getElementById(id);
+
+const coins = (
+'BTC ETH SOL BNB XRP LINK AVAX ADA DOGE SUI ' +
+'NEAR LTC TRX UNI BCH DOT APT ARB AAVE XLM'
+).split(' ');
+
+const scenarios = [
+  {
+    name: 'Romp. 1,5x',
+    volume_ratio: 1.5,
+    trend5: true,
+    breakout: true
+  },
+  {
+    name: 'Romp. 2x',
+    volume_ratio: 2,
+    trend5: true,
+    breakout: true
+  },
+  {
+    name: 'Alta sem romp.',
+    volume_ratio: 1.5,
+    trend5: true,
+    breakout: false
+  }
+];
+
+async function analyze(pin, coin, setup) {
+  const response = await fetch(
+    '/api/quant-v7/lab-assess',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-quant-pin': pin
+      },
+      body: JSON.stringify({
+        symbol: coin,
+        volume_ratio: setup.volume_ratio,
+        trend5: setup.trend5,
+        breakout: setup.breakout
+      }),
+      cache: 'no-store'
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw Error(data.error || 'Consulta falhou');
+  }
+
+  return data.evaluation || {};
+}
+
+function row(coin, setup, result, error) {
+  const tr = document.createElement('tr');
+  const n = Number(result.sample_size || 0);
+  const valid = !error && n >= 40;
+  const mean = Number(result.mean_net_usdt);
+  const values = [
+    coin,
+    setup.name,
+    error ? 'Erro' : n,
+    valid && Number.isFinite(mean)
+      ? mean.toFixed(4) : '—',
+    valid && result.win_rate_pct != null
+      ? result.win_rate_pct + '%' : '—'
+  ];
+
+  for (let i = 0; i < values.length; i++) {
+    const td = document.createElement('td');
+    td.textContent = values[i];
+
+    if (i === 3 && valid) {
+      td.className = mean > 0 ? 'good' : 'bad';
+    }
+
+    tr.appendChild(td);
+  }
+
+  $('rows').appendChild(tr);
+}
+
+$('start').onclick = async () => {
+  const pin = $('pin').value;
+
+  if (!pin) {
+    $('status').textContent = 'Digite o PIN.';
+    return;
+  }
+
+  $('start').disabled = true;
+  $('rows').replaceChildren();
+
+  let total = 0;
+  let errors = 0;
+  let positive = 0;
+  let insufficient = 0;
+
+  try {
+    for (const coin of coins) {
+      for (const setup of scenarios) {
+        try {
+          const result = await analyze(pin, coin, setup);
+          row(coin, setup, result, null);
+
+          if (Number(result.sample_size) < 40) {
+            insufficient++;
+          } else if (Number(result.mean_net_usdt) > 0) {
+            positive++;
+          }
+        } catch (error) {
+          errors++;
+          row(coin, setup, {}, error.message);
+        }
+
+        total++;
+        $('status').textContent =
+          total + ' de 60 consultas concluídas.';
+      }
+    }
+
+    $('summary').textContent =
+      'Total: ' + total +
+      ' | Médias positivas para investigar: ' + positive +
+      ' | Amostras insuficientes: ' + insufficient +
+      ' | Erros: ' + errors;
+
+  } finally {
+    $('pin').value = '';
+    $('start').disabled = false;
+  }
+};
+</script>
+</body>
+</html>
