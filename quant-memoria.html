@@ -151,6 +151,35 @@ $('load').onclick=async()=>{
   $('load').disabled=false;
  }
 };
+
+<section class="panel">
+  <h2>🧠 Quant V7 — Importação histórica</h2>
+
+  <p>
+    Importar até 1.000 velas de BTC por execução.
+    Somente pesquisa, sem operações reais.
+  </p>
+
+  <label for="v7pin">PIN administrativo</label>
+
+  <p>
+    <input
+      type="password"
+      id="v7pin"
+      autocomplete="off"
+      placeholder="Digite seu PIN"
+    >
+  </p>
+
+  <button id="v7import" type="button">
+    Importar 1.000 velas de BTC
+  </button>
+
+  <p id="v7status" role="status">
+    Importação ainda não iniciada.
+  </p>
+</section>
+
 </script>
 </body>
 </html>
