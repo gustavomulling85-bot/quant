@@ -112,6 +112,42 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+// QUANT V7.3: Pesquisa somente leitura, sem ordens.
+if (u.pathname === '/api/quant-v73/optimize' && req.method === 'POST') {
+  if (!pinValid(req.headers['x-quant-pin'])) {
+    return json(res, 401, { error: 'PIN invalido' });
+  }
+  const input = await readBody(req, 1024);
+  const symbol = String(input.symbol || '').toUpperCase();
+  const cost = Number(input.cost_usdt);
+  if (!SYMBOLS.has(symbol) || !Number.isFinite(cost) || cost < 0 || cost > 2) {
+    return json(res, 400, { error: 'Parametros invalidos' });
+  }
+  const base = process.env.SUPABASE_URL?.replace(/\/$/, '');
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!base || !key) return json(res, 503, { error: 'Banco indisponivel' });
+  try {
+    const result = await fetch(base + '/rest/v1/rpc/quant_v73_optimize', {
+      method: 'POST',
+      headers: { apikey: key, Authorization: 'Bearer ' + key,
+        'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ p_symbol: symbol + 'USDT', p_cost: cost }),
+      signal: AbortSignal.timeout(30000)
+    });
+    if (!result.ok) {
+      return json(res, 502, {
+        error: 'Falha na pesquisa V7.3 (HTTP ' + result.status + ')'
+      });
+    }
+    return json(res, 200, {
+      module: 'QUANT_V73', mode: 'RESEARCH_ONLY', realOrders: false,
+      symbol, results: await result.json()
+    });
+  } catch (error) {
+    return json(res, 502, { error: 'Pesquisa V7.3 indisponivel' });
+  }
+}
+
        // QUANT V7.2 — Pesquisa privada, sem ordens.
     if (u.pathname === '/api/quant-v72/validate' && req.method === 'POST') {
       if (!pinValid(req.headers['x-quant-pin'])) {
