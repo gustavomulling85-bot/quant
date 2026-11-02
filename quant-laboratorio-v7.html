@@ -1,0 +1,144 @@
+
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quant V7 - Laboratório</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;padding:18px;background:#091524;color:#eaf2ff;font:16px/1.5 system-ui}
+main{max-width:680px;margin:auto}
+section{background:#172b43;border:1px solid #355575;border-radius:16px;padding:20px;margin:18px 0}
+h1{font-size:27px}
+label{display:block;margin:14px 0 6px}
+input,select,button{font:inherit;padding:12px;border-radius:10px;max-width:100%}
+input,select{background:#07182c;color:white;border:1px solid #54708e;width:100%}
+button{background:#ffcc30;color:#071527;border:0;font-weight:700;margin-top:20px}
+button:disabled{opacity:.5}
+small,p{color:#bbcbe0}
+strong{color:#fff}
+a{color:#c3deff}
+.metric{padding:12px 0;border-bottom:1px solid #38516c}
+</style>
+</head>
+<body>
+<main>
+<a href="/quant-memoria.html">← Memória Estratégica</a>
+<h1>🧠 Quant V7 — Laboratório</h1>
+<p>Pesquisa histórica independente. Não realiza operações nem altera o robô.</p>
+
+<section>
+<label for="pin">PIN administrativo</label>
+<input id="pin" type="password" autocomplete="off">
+
+<label for="symbol">Criptomoeda</label>
+<select id="symbol"></select>
+
+<label for="volume">Volume relativo</label>
+<input id="volume" type="number" min=".1" max="20" step=".1" value="1.5">
+
+<label for="trend">Tendência de 5 minutos</label>
+<select id="trend">
+<option value="true">Alta</option>
+<option value="false">Sem alta confirmada</option>
+</select>
+
+<label for="breakout">Rompimento</label>
+<select id="breakout">
+<option value="true">Com rompimento</option>
+<option value="false">Sem rompimento</option>
+</select>
+
+<button id="run">Analisar padrão histórico</button>
+<p id="status" role="status">Pronto para analisar.</p>
+</section>
+
+<section>
+<h2>Resultado da pesquisa</h2>
+<div id="result">Nenhuma análise realizada.</div>
+<small>Estimativa baseada nas 10.000 velas mais recentes da moeda, horizonte de 12 minutos, posição hipotética de 50 USDT e custo fixo estimado de 0,16 USDT. Não equivale a backtest completo ou previsão de lucro.</small>
+</section>
+</main>
+<script>
+'use strict';
+
+const $ = id => document.getElementById(id);
+
+const coins = [
+'BTC','ETH','SOL','BNB','XRP',
+'LINK','AVAX','ADA','DOGE','SUI',
+'NEAR','LTC','TRX','UNI','BCH',
+'DOT','APT','ARB','AAVE','XLM'
+];
+
+for (const coin of coins) {
+  const option = document.createElement('option');
+  option.value = coin;
+  option.textContent = coin + '/USDT';
+  $('symbol').appendChild(option);
+}
+
+function metric(label, value) {
+  const div = document.createElement('div');
+  div.className = 'metric';
+  const name = document.createElement('strong');
+  name.textContent = label + ': ';
+  div.append(name, document.createTextNode(String(value)));
+  $('result').appendChild(div);
+}
+
+$('run').onclick = async () => {
+  const pin = $('pin').value;
+  if (!pin) {
+    $('status').textContent = 'Informe seu PIN.';
+    return;
+  }
+
+  $('run').disabled = true;
+  $('status').textContent = 'Pesquisando histórico...';
+  $('result').replaceChildren();
+
+  try {
+    const response = await fetch('/api/quant-v7/lab-assess', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-quant-pin': pin
+      },
+      body: JSON.stringify({
+        symbol: $('symbol').value,
+        volume_ratio: Number($('volume').value),
+        trend5: $('trend').value === 'true',
+        breakout: $('breakout').value === 'true'
+      }),
+      cache: 'no-store'
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw Error(data.error || 'Falha na consulta.');
+    }
+
+    const x = data.evaluation || {};
+    metric('Moeda', data.symbol);
+    metric('Ocorrências semelhantes', x.sample_size ?? 0);
+    metric('Resultado médio estimado (USDT)', x.mean_net_usdt ?? 'Indisponível');
+    metric('Resultados positivos', x.win_rate_pct == null ? 'Indisponível' : x.win_rate_pct + '%');
+    metric('Classificação', x.assessment || 'Sem avaliação');
+    metric('Período inicial', x.sample_start || 'Indisponível');
+    metric('Período final', x.sample_end || 'Indisponível');
+
+    $('status').textContent = 'Pesquisa concluída. Nenhuma operação executada.';
+  } catch (error) {
+    $('status').textContent = 'Erro: ' + error.message;
+  } finally {
+    $('pin').value = '';
+    $('run').disabled = false;
+  }
+};
+</script>
+</body>
+</html>
