@@ -764,6 +764,74 @@ async function scan() {
       if(cooldownRemaining(pick.sym)>0)
         continue;
 
+      
+      // V7 — Consulta histórica em modo observação
+      try {
+        const f = pick.memoryFeatures || {};
+
+        const insights = await qRequest(
+          'POST',
+          'rpc/quant_v7_pattern_assess',
+          {
+            p_symbol: pick.sym + 'USDT',
+            p_volume_ratio: Number(
+              pick.volumeRatio || f.volumeRatio || 1
+            ),
+            p_trend5: Boolean(pick.checks?.trend5),
+            p_breakout: Boolean(pick.checks?.breakout)
+          }
+        );
+
+        const insight = insights?.[0] || {};
+
+        await qRequest(
+          'POST',
+          'quant_v7_signal_observations?on_conflict=signal_key',
+          [{
+            signal_key:
+              'v7:' + pick.sym + ':' + pick.signalTime,
+            observed_at: new Date().toISOString(),
+            symbol: pick.sym,
+            model_version: 'V7_SHADOW_01',
+            candidate_strategy: 'scalping-1m-5m',
+            features: {
+              ...f,
+              historical_sample_size:
+                Number(insight.sample_size || 0)
+            },
+            decision: 'OBSERVE',
+            reason: insight.assessment ||
+              'HISTORICAL_ASSESSMENT',
+            market_regime: pick.checks?.trend5
+              ? 'UPTREND_5M' : 'UNCONFIRMED_5M',
+            estimated_roundtrip_cost_usdt: 0.16,
+            predicted_net_usdt:
+              insight.mean_net_usdt,
+            predicted_probability:
+              insight.win_rate_pct == null
+                ? null
+                : Number(insight.win_rate_pct) / 100,
+            evaluation_after:
+              new Date(Date.now() + 720000)
+                .toISOString()
+          }]
+        );
+
+        log(
+          'V7 MEMORIA ' + pick.sym +
+          ' | Amostra: ' + (insight.sample_size || 0) +
+          ' | Media: ' + (insight.mean_net_usdt ?? '?'),
+          'scan'
+        );
+
+      } catch (v7error) {
+        log(
+          'V7 consulta indisponivel: ' +
+          v7error.message,
+          'warning'
+        );
+      }
+
       const q=await book(pick.sym);
       if(q.ask>pick.ask*1.001) continue;
 
