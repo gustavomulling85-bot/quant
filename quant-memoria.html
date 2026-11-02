@@ -237,8 +237,7 @@ $('v7import').onclick = async () => {
     $('v7import').disabled = false;
   }
 };
-
-async function v7Auto(action) {
+async function v7Auto(action, scope = 'BTC') {
   const pin = $('v7pin').value;
 
   if (!pin) {
@@ -247,9 +246,13 @@ async function v7Auto(action) {
     return;
   }
 
-  const button = $(action === 'start'
-    ? 'v7auto'
-    : 'v7progress');
+  
+const button = $(
+  action === 'start'
+    ? (scope === 'ALL' ? 'v7all' : 'v7auto')
+    : 'v7progress'
+);
+
 
   button.disabled = true;
 
