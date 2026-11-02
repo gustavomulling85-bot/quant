@@ -113,6 +113,87 @@ const server = http.createServer(async (req, res) => {
     }
 
    
+    // QUANT V7.1 - VALIDACAO HISTORICA
+    // Pesquisa privada, sem compras ou vendas.
+
+    if (
+      u.pathname === '/api/quant-v71/validate' &&
+      req.method === 'POST'
+    ) {
+      if (!pinValid(req.headers['x-quant-pin'])) {
+        return json(res, 401, {
+          error: 'PIN invalido'
+        });
+      }
+
+      const input = await readBody(req, 1024);
+      const symbol = String(input.symbol || '')
+        .toUpperCase();
+      const cost = Number(input.cost_usdt ?? 0.16);
+
+      if (
+        !SYMBOLS.has(symbol) ||
+        !Number.isFinite(cost) ||
+        cost < 0 ||
+        cost > 2
+      ) {
+        return json(res, 400, {
+          error: 'Parametros invalidos'
+        });
+      }
+
+      const base = process.env.SUPABASE_URL
+        ?.replace(/\/$/, '');
+
+      const key =
+        process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+      if (!base || !key) {
+        return json(res, 503, {
+          error: 'Banco indisponivel'
+        });
+      }
+
+      try {
+        const response = await fetch(
+          base + '/rest/v1/rpc/quant_v71_validate',
+          {
+            method: 'POST',
+            headers: {
+              apikey: key,
+              Authorization: 'Bearer ' + key,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              p_symbol: symbol + 'USDT',
+              p_cost_usdt: cost
+            }),
+            signal: AbortSignal.timeout(30000)
+          }
+        );
+
+        if (!response.ok) {
+          return json(res, 502, {
+            error: 'Falha na validacao historica',
+            status: response.status
+          });
+        }
+
+        return json(res, 200, {
+          module: 'QUANT_V71',
+          mode: 'RESEARCH_ONLY',
+          symbol,
+          results: await response.json(),
+          realOrders: false
+        });
+
+      } catch (error) {
+        return json(res, 502, {
+          error: 'Consulta indisponivel'
+        });
+      }
+    }
+
     // QUANT V7 — LABORATORIO HISTORICO
     // Somente pesquisa. Nao executa compras.
 
