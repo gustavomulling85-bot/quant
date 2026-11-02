@@ -112,7 +112,98 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // ======================================
+   
+    // QUANT V7 — LABORATORIO HISTORICO
+    // Somente pesquisa. Nao executa compras.
+
+    if (
+      u.pathname === '/api/quant-v7/lab-assess' &&
+      req.method === 'POST'
+    ) {
+      if (!pinValid(req.headers['x-quant-pin'])) {
+        return json(res, 401, {
+          error: 'PIN invalido'
+        });
+      }
+
+      const input = await readBody(req, 1024);
+      const symbol = String(
+        input.symbol || ''
+      ).toUpperCase();
+
+      const ratio = Number(input.volume_ratio);
+
+      if (
+        !SYMBOLS.has(symbol) ||
+        !Number.isFinite(ratio) ||
+        ratio < 0.1 ||
+        ratio > 20 ||
+        typeof input.trend5 !== 'boolean' ||
+        typeof input.breakout !== 'boolean'
+      ) {
+        return json(res, 400, {
+          error: 'Parametros invalidos'
+        });
+      }
+
+      const base = process.env.SUPABASE_URL
+        ?.replace(/\/$/, '');
+
+      const key =
+        process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+      if (!base || !key) {
+        return json(res, 503, {
+          error: 'Supabase indisponivel'
+        });
+      }
+
+      try {
+        const response = await fetch(
+          base +
+          '/rest/v1/rpc/quant_v7_pattern_assess',
+          {
+            method: 'POST',
+            headers: {
+              apikey: key,
+              Authorization: 'Bearer ' + key,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              p_symbol: symbol + 'USDT',
+              p_volume_ratio: ratio,
+              p_trend5: input.trend5,
+              p_breakout: input.breakout
+            }),
+            signal: AbortSignal.timeout(25000)
+          }
+        );
+
+        if (!response.ok) {
+          return json(res, 502, {
+            error: 'Falha na pesquisa historica',
+            status: response.status
+          });
+        }
+
+        const rows = await response.json();
+
+        return json(res, 200, {
+          mode: 'RESEARCH_ONLY',
+          symbol,
+          evaluation: rows[0] || null,
+          holdingMinutes: 12,
+          estimatedCostUSDT: 0.16,
+          realOrders: false
+        });
+
+      } catch (error) {
+        return json(res, 502, {
+          error: 'Consulta indisponivel'
+        });
+      }
+    }
+ // ======================================
     // QUANT — MEMORIA ESTRATEGICA
     // Consulta privada, somente leitura
     // ======================================
