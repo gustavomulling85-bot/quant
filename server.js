@@ -178,6 +178,210 @@ const server = http.createServer(async (req, res) => {
     }
 
 
+    // ======================================
+    // QUANT V7 - IMPORTACAO CONTROLADA
+    // Um lote por solicitacao, somente pesquisa
+    // ======================================
+
+    if (
+      u.pathname === '/api/quant-v7/import-one' &&
+      req.method === 'POST'
+    ) {
+      if (!pinValid(req.headers['x-quant-pin'])) {
+        return json(res, 401, {
+          error: 'PIN invalido.'
+        });
+      }
+
+      if (server.v7ImportBusy) {
+        return json(res, 409, {
+          error: 'Importacao em andamento.'
+        });
+      }
+
+      server.v7ImportBusy = true;
+
+      try {
+        const data = await readBody(req, 512);
+        const sym = String(
+          data.symbol || ''
+        ).toUpperCase();
+
+        if (!SYMBOLS.has(sym)) {
+          return json(res, 400, {
+            error: 'Moeda nao permitida.'
+          });
+        }
+
+        const base = process.env.SUPABASE_URL
+          ?.replace(/\/$/, '');
+
+        const key =
+          process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+        if (!base || !key) {
+          return json(res, 503, {
+            error: 'Supabase indisponivel.'
+          });
+        }
+
+        const symbol = sym + 'USDT';
+
+        const headers = {
+          apikey: key,
+          Authorization: 'Bearer ' + key,
+          Accept: 'application/json'
+        };
+
+        const lastUrl =
+          base +
+          '/rest/v1/quant_v7_candles' +
+          '?select=open_time' +
+          '&symbol=eq.' + symbol +
+          '&timeframe=eq.1m' +
+          '&order=open_time.desc' +
+          '&limit=1';
+
+        const lastRes = await fetch(lastUrl, {
+          headers,
+          signal: AbortSignal.timeout(15000)
+        });
+
+        if (!lastRes.ok) {
+          return json(res, 502, {
+            error: 'Falha ao consultar a memoria.',
+            status: lastRes.status
+          });
+        }
+
+        const last = await lastRes.json();
+
+        const until =
+          Math.floor(Date.now() / 60000) *
+          60000;
+
+        const start = last.length
+          ? Date.parse(last[0].open_time) + 60000
+          : until - 21 * 86400000;
+
+        if (start >= until) {
+          return json(res, 200, {
+            symbol,
+            imported: 0,
+            complete: true
+          });
+        }
+
+        const params = new URLSearchParams({
+          symbol,
+          interval: '1m',
+          startTime: String(start),
+          endTime: String(until - 1),
+          limit: '1000'
+        });
+
+        const source =
+          'https://api.binance.com/api/v3/klines?' +
+          params;
+
+        const candlesRes = await fetch(source, {
+          signal: AbortSignal.timeout(15000)
+        });
+
+        if (!candlesRes.ok) {
+          return json(res, 502, {
+            error: 'Binance indisponivel.',
+            status: candlesRes.status
+          });
+        }
+
+        const raw = await candlesRes.json();
+
+        if (!Array.isArray(raw)) {
+          throw Error('Resposta inesperada.');
+        }
+
+        const rows = raw
+          .filter(k => Number(k[6]) < Date.now())
+          .map(k => ({
+            symbol,
+            timeframe: '1m',
+
+            open_time:
+              new Date(Number(k[0]))
+                .toISOString(),
+
+            open: Number(k[1]),
+            high: Number(k[2]),
+            low: Number(k[3]),
+            close: Number(k[4]),
+
+            volume: Number(k[5]),
+
+            quote_volume: Number(k[7]),
+
+            trades: Number(k[8]),
+
+            taker_buy_quote_volume:
+              Number(k[10]),
+
+            source: 'binance_spot_api'
+          }));
+
+        if (rows.length) {
+          const saved = await fetch(
+            base +
+            '/rest/v1/quant_v7_candles' +
+            '?on_conflict=symbol,timeframe,open_time',
+            {
+              method: 'POST',
+
+              headers: {
+                ...headers,
+
+                'Content-Type':
+                  'application/json',
+
+                Prefer:
+                  'resolution=merge-duplicates,return=minimal'
+              },
+
+              body: JSON.stringify(rows),
+
+              signal:
+                AbortSignal.timeout(25000)
+            }
+          );
+
+          if (!saved.ok) {
+            return json(res, 502, {
+              error: 'Falha ao salvar velas.',
+              status: saved.status
+            });
+          }
+        }
+
+        return json(res, 200, {
+          symbol,
+          imported: rows.length,
+
+          lastCandle:
+            rows.at(-1)?.open_time || null,
+
+          complete: rows.length < 1000
+        });
+
+      } catch (error) {
+        return json(res, 502, {
+          error: 'Importacao falhou: ' +
+            error.message
+        });
+
+      } finally {
+        server.v7ImportBusy = false;
+      }
+    }
+
 
 
 
