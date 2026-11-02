@@ -220,6 +220,68 @@ $('v7import').onclick = async () => {
   }
 };
 
+async function v7Auto(action) {
+  const pin = $('v7pin').value;
+
+  if (!pin) {
+    $('v7status').textContent =
+      'Digite o PIN administrativo.';
+    return;
+  }
+
+  const button = $(action === 'start'
+    ? 'v7auto'
+    : 'v7progress');
+
+  button.disabled = true;
+
+  try {
+    const response = await fetch(
+      action === 'start'
+        ? '/api/quant-v7/auto-start'
+        : '/api/quant-v7/auto-status',
+      {
+        method: action === 'start'
+          ? 'POST'
+          : 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-quant-pin': pin
+        },
+        ...(action === 'start'
+          ? {body: JSON.stringify({scope: 'BTC'})}
+          : {}),
+        cache: 'no-store'
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw Error(data.error || 'Erro na consulta');
+    }
+
+    $('v7status').textContent =
+      'Estado: ' +
+      (data.running ? 'Importando' : 'Parado') +
+      ' | Moeda: ' + (data.symbol || 'BTC') +
+      ' | Lotes: ' + (data.batches || 0) +
+      ' | Velas nesta execução: ' +
+      (data.imported || 0) +
+      (data.error ? ' | Erro: ' + data.error : '');
+
+  } catch (error) {
+    $('v7status').textContent =
+      'Falha: ' + error.message;
+  } finally {
+    $('v7pin').value = '';
+    button.disabled = false;
+  }
+}
+
+$('v7auto').onclick = () => v7Auto('start');
+$('v7progress').onclick = () => v7Auto('status');
+
 </script>
 </body>
 </html>
