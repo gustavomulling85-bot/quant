@@ -387,6 +387,148 @@ const server = http.createServer(async (req, res) => {
 
 
 
+    
+    // ======================================
+    // QUANT V7 - IMPORTADOR AUTOMATICO
+    // Somente pesquisa, sem ordens
+    // ======================================
+
+    if (
+      u.pathname === '/api/quant-v7/auto-status' &&
+      req.method === 'GET'
+    ) {
+      if (!pinValid(req.headers['x-quant-pin'])) {
+        return json(res, 401, {
+          error: 'PIN invalido'
+        });
+      }
+
+      return json(res, 200, server.v7Job || {
+        running: false,
+        message: 'Nenhuma importacao iniciada'
+      });
+    }
+
+    if (
+      u.pathname === '/api/quant-v7/auto-start' &&
+      req.method === 'POST'
+    ) {
+      if (!pinValid(req.headers['x-quant-pin'])) {
+        return json(res, 401, {
+          error: 'PIN invalido'
+        });
+      }
+
+      if (server.v7Job?.running) {
+        return json(res, 409, {
+          error: 'Ja existe importacao ativa'
+        });
+      }
+
+      let data;
+
+      try {
+        data = await readBody(req, 512);
+      } catch (error) {
+        return json(res, 400, {
+          error: error.message
+        });
+      }
+
+      const scope = data.scope;
+
+      if (scope !== 'BTC' && scope !== 'ALL') {
+        return json(res, 400, {
+          error: 'Use BTC ou ALL'
+        });
+      }
+
+      const coins = scope === 'BTC'
+        ? ['BTC']
+        : [...SYMBOLS];
+
+      const job = {
+        running: true,
+        scope,
+        startedAt: new Date().toISOString(),
+        symbol: null,
+        batches: 0,
+        imported: 0,
+        finishedCoins: [],
+        error: null
+      };
+
+      server.v7Job = job;
+
+      json(res, 202, job);
+
+      setImmediate(async () => {
+        try {
+          for (const symbol of coins) {
+            job.symbol = symbol;
+
+            let finished = false;
+
+            for (let batch = 0; batch < 40; batch++) {
+              const response = await fetch(
+                'http://127.0.0.1:' + PORT +
+                '/api/quant-v7/import-one',
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'x-quant-pin':
+                      process.env.QUANT_ACCESS_PIN
+                  },
+                  body: JSON.stringify({ symbol }),
+                  signal: AbortSignal.timeout(90000)
+                }
+              );
+
+              const result = await response.json();
+
+              if (!response.ok) {
+                throw Error(
+                  symbol + ': ' +
+                  (result.error || response.status)
+                );
+              }
+
+              job.batches++;
+              job.imported += result.imported || 0;
+
+              if (result.complete) {
+                finished = true;
+                break;
+              }
+
+              await new Promise(resolve =>
+                setTimeout(resolve, 1500)
+              );
+            }
+
+            if (!finished) {
+              throw Error(
+                symbol + ': limite de lotes atingido'
+              );
+            }
+
+            job.finishedCoins.push(symbol);
+          }
+
+        } catch (error) {
+          job.error = error.message;
+
+        } finally {
+          job.running = false;
+          job.finishedAt =
+            new Date().toISOString();
+        }
+      });
+
+      return;
+    }
+
     // ======================================
     // VERIFICACAO DO SERVIDOR
     // ======================================
