@@ -169,33 +169,56 @@ $('load').onclick=async()=>{
  }
 };
 
-<section class="panel">
-  <h2>🧠 Quant V7 — Importação histórica</h2>
 
-  <p>
-    Importar até 1.000 velas de BTC por execução.
-    Somente pesquisa, sem operações reais.
-  </p>
+$('v7import').onclick = async () => {
+  const pin = $('v7pin').value;
 
-  <label for="v7pin">PIN administrativo</label>
+  if (!pin) {
+    $('v7status').textContent =
+      'Digite o PIN administrativo.';
+    return;
+  }
 
-  <p>
-    <input
-      type="password"
-      id="v7pin"
-      autocomplete="off"
-      placeholder="Digite seu PIN"
-    >
-  </p>
+  $('v7import').disabled = true;
+  $('v7status').textContent =
+    'Importando velas de BTC...';
 
-  <button id="v7import" type="button">
-    Importar 1.000 velas de BTC
-  </button>
+  try {
+    const response = await fetch(
+      '/api/quant-v7/import-one',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-quant-pin': pin
+        },
+        body: JSON.stringify({
+          symbol: 'BTC'
+        }),
+        cache: 'no-store'
+      }
+    );
 
-  <p id="v7status" role="status">
-    Importação ainda não iniciada.
-  </p>
-</section>
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw Error(
+        data.error || 'Erro na importação.'
+      );
+    }
+
+    $('v7status').textContent =
+      'Sucesso! ' + data.imported +
+      ' velas de BTC importadas.';
+
+  } catch (error) {
+    $('v7status').textContent =
+      'Falha: ' + error.message;
+  } finally {
+    $('v7pin').value = '';
+    $('v7import').disabled = false;
+  }
+};
 
 </script>
 </body>
