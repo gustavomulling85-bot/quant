@@ -211,7 +211,7 @@ $('v7import').onclick = async () => {
           'x-quant-pin': pin
         },
         
-        }),body: JSON.stringify({scope})
+        ? {body: JSON.stringify({scope})}
         cache: 'no-store'
       }
     );
