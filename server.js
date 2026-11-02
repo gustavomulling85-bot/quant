@@ -147,7 +147,7 @@ const server = http.createServer(async (req, res) => {
         });
         if (!result.ok) {
           return json(res, 502, {
-            error: 'Falha na pesquisa V7.2', status: result.status
+            error: 'Falha na pesquisa V7.2 (HTTP ' + result.status + ')'
           });
         }
         return json(res, 200, {
