@@ -210,9 +210,8 @@ $('v7import').onclick = async () => {
           'Content-Type': 'application/json',
           'x-quant-pin': pin
         },
-        body: JSON.stringify({
-          symbol: 'BTC'
-        }),
+        
+        }),body: JSON.stringify({scope})
         cache: 'no-store'
       }
     );
@@ -302,6 +301,8 @@ const button = $(
 
 $('v7auto').onclick = () => v7Auto('start');
 $('v7progress').onclick = () => v7Auto('status');
+
+$('v7all').onclick = () => v7Auto('start', 'ALL');
 
 </script>
 </body>
