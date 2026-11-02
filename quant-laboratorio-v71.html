@@ -1,0 +1,270 @@
+
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quant V7.1 - Validação</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;padding:16px;background:#091524;color:#eaf2ff;font:15px/1.5 system-ui}
+main{max-width:900px;margin:auto}
+h1{font-size:26px;line-height:1.2}
+section,.coin{background:#172b43;border:1px solid #385675;border-radius:16px;padding:18px;margin:16px 0}
+a{color:#badbff}
+label{display:block;margin:12px 0 5px}
+select,input,button{font:inherit;padding:12px;border-radius:10px}
+select,input{background:#07182c;color:white;border:1px solid #55738d;width:100%}
+button{background:#ffca30;color:#081524;border:0;font-weight:750;margin-top:16px}
+button:disabled{opacity:.5}
+p,small{color:#bdccde}
+.coin h3{margin:0 0 10px}
+.metric{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 0;border-bottom:1px solid #35516c}
+.metric div{min-width:0}
+.metric b{display:block;font-size:17px}
+.metric small{display:block}
+.good{color:#8ee1ad}
+.bad{color:#ff8787}
+.warn{color:#ffdc80}
+.tag{font-size:12px;color:#bdccdf}
+</style>
+</head>
+<body>
+<main>
+<a href="/quant-comparador-v7.html">← Comparador V7</a>
+
+<h1>🧠 Quant V7.1</h1>
+<p>Validação histórica — treino × teste</p>
+
+<section>
+  <h2>Configuração</h2>
+
+  <label for="pin">PIN administrativo</label>
+  <input id="pin" type="password" autocomplete="off">
+
+  <label for="coin">Criptomoeda</label>
+  <select id="coin"></select>
+
+  <label for="cost">Custo total estimado (USDT)</label>
+  <input id="cost" type="number"
+    value="0.16" min="0" max="2" step="0.01">
+
+  <button id="run" type="button">
+    Iniciar validação
+  </button>
+
+  <p id="status" role="status">
+    Pronto para pesquisar.
+  </p>
+
+  <small>
+    Somente pesquisa. Não executa operações
+    nem altera o robô.
+  </small>
+</section>
+
+<section>
+  <h2>Resultados</h2>
+  <p id="summary">Nenhuma análise realizada.</p>
+  <div id="results"></div>
+  <small>
+    Retornos hipotéticos com posição de 50 USDT.
+    Divisão cronológica de 70% para treino
+    e 30% para teste. Ocorrências podem
+    se sobrepor. Não constitui validação
+    de uma estratégia operacional completa.
+  </small>
+</section>
+</main>
+
+<script>
+'use strict';
+
+const $ = id => document.getElementById(id);
+
+const coins = (
+  'BTC ETH SOL BNB XRP LINK AVAX ADA DOGE SUI ' +
+  'NEAR LTC TRX UNI BCH DOT APT ARB AAVE XLM'
+).split(' ');
+
+const select = $('coin');
+
+for (const name of ['TODAS',...coins]) {
+  const option = document.createElement('option');
+  option.value = name;
+  option.textContent =
+    name === 'TODAS' ? 'Todas as 20 moedas' :
+    name + '/USDT';
+  select.appendChild(option);
+}
+
+function value(n) {
+  return n == null ? '—' :
+    Number(n).toFixed(4) + ' USDT';
+}
+
+function block(title,text,css='') {
+  const div=document.createElement('div');
+  const b=document.createElement('b');
+  b.textContent=text;
+  b.className=css;
+  const small=document.createElement('small');
+  small.textContent=title;
+  div.append(b,small);
+  return div;
+}
+
+function renderCoin(coin,rows) {
+  const card=document.createElement('div');
+  card.className='coin';
+
+  const h=document.createElement('h3');
+  h.textContent=coin+'/USDT';
+  card.appendChild(h);
+
+  for (const minutes of [3,5,10,15,30]) {
+    const train=rows.find(r =>
+      Number(r.holding_minutes)===minutes &&
+      r.phase==='TREINO'
+    );
+    const test=rows.find(r =>
+      Number(r.holding_minutes)===minutes &&
+      r.phase==='TESTE'
+    );
+
+    const row=document.createElement('div');
+    row.className='metric';
+
+    const left=block(
+      minutes+' min · TREINO · '+(train?.observations||0)+' casos',
+      value(train?.avg_net_usdt),
+      Number(train?.avg_net_usdt)>0?'good':'bad'
+    );
+    const right=block(
+      minutes+' min · TESTE · '+(test?.observations||0)+' casos',
+      value(test?.avg_net_usdt),
+      Number(test?.avg_net_usdt)>0?'good':'bad'
+    );
+
+    row.append(left,right);
+    card.appendChild(row);
+
+    const detail=document.createElement('small');
+    const tr=Number(train?.positive_pct);
+    const te=Number(test?.positive_pct);
+
+    detail.textContent=
+      'Resultados positivos: treino '+
+      (train?.positive_pct??'—')+
+      '% | teste '+(test?.positive_pct??'—')+'%';
+
+    card.appendChild(detail);
+
+    if (
+      train && test &&
+      Number(train.avg_net_usdt)>0 &&
+      Number(test.avg_net_usdt)<=0
+    ) {
+      const warning=document.createElement('p');
+      warning.className='warn';
+      warning.textContent=
+        '⚠️ Positivo no treino, negativo no teste.';
+      card.appendChild(warning);
+    }
+  }
+
+  $('results').appendChild(card);
+}
+
+async function consult(pin,coin,cost) {
+  const res=await fetch('/api/quant-v71/validate',{
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      'x-quant-pin':pin
+    },
+    body:JSON.stringify({
+      symbol:coin,
+      cost_usdt:cost
+    }),
+    cache:'no-store'
+  });
+
+  const data=await res.json();
+
+  if (!res.ok) {
+    throw Error(data.error||'Falha na consulta.');
+  }
+
+  return data.results||[];
+}
+
+$('run').onclick=async()=>{
+  const pin=$('pin').value;
+  const cost=Number($('cost').value);
+
+  if (!pin) {
+    $('status').textContent='Digite o PIN.';
+    return;
+  }
+
+  if (!Number.isFinite(cost)||cost<0||cost>2) {
+    $('status').textContent='Custo inválido.';
+    return;
+  }
+
+  const selected=$('coin').value;
+  const list=selected==='TODAS'?coins:[selected];
+
+  $('run').disabled=true;
+  $('results').replaceChildren();
+
+  let completed=0;
+  let failures=0;
+  let positive=0;
+
+  try {
+    for(const coin of list) {
+      $('status').textContent=
+        'Analisando '+coin+'... '+
+        completed+'/'+list.length;
+
+      try {
+        const rows=await consult(pin,coin,cost);
+        renderCoin(coin,rows);
+
+        for(const r of rows) {
+          if (
+            r.phase==='TESTE' &&
+            Number(r.observations)>=40 &&
+            Number(r.avg_net_usdt)>0
+          ) positive++;
+        }
+      }catch(err){
+        failures++;
+        const p=document.createElement('p');
+        p.textContent=coin+': '+err.message;
+        $('results').appendChild(p);
+      }
+
+      completed++;
+    }
+
+    $('status').textContent=
+      'Validação concluída: '+completed+'/'+list.length;
+
+    $('summary').textContent=
+      'Moedas: '+completed+
+      ' | Horizontes positivos no teste: '+positive+
+      ' | Falhas: '+failures+
+      '. Resultados positivos exigem nova validação.';
+
+  }finally{
+    $('pin').value='';
+    $('run').disabled=false;
+  }
+};
+</script>
+</body>
+</html>
