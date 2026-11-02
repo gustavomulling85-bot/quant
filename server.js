@@ -281,7 +281,8 @@ const server = http.createServer(async (req, res) => {
         });
 
         const source =
-          'https://api.binance.com/api/v3/klines?' +
+          
+'https://data-api.binance.vision/api/v3/klines?' +
           params;
 
         const candlesRes = await fetch(source, {
