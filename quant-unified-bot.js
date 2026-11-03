@@ -388,7 +388,8 @@ function blocking() {
      return 'TRAVA: '+st.settings.maxLosses+' LOSSES';
   if(pnl()<=-20) return 'LIMITE DE PERDA DIARIA';
   if(pnl()>=30) return 'META DIARIA ATINGIDA';
-  if(st.positions.length>=1) return 'POSICAO ABERTA';
+  if(st.positions.length >= st.settings.maxPositions)
+  return 'LIMITE DE POSICOES';
   return null;
 }
 
@@ -752,8 +753,15 @@ async function scan() {
 
   if(!candidates.length||blocking()) return;
 
-  for(const pick of candidates) {
-    try {
+  
+for(const pick of candidates) {
+  if (blocking()) break;
+
+  if (st.positions.some(p => p.sym === pick.sym))
+    continue;
+
+  try {
+
       // Protecao contra o mesmo candle.
       if(st.usedSignals[pick.sym]===pick.signalTime)
         continue;
@@ -839,8 +847,26 @@ async function scan() {
       const spread=100*(q.ask-q.bid)/((q.ask+q.bid)/2);
       if(spread>0.08) continue;
 
-      const stake=50;
-      const entry=q.ask*(1+SLIP);
+      
+if (blocking()) break;
+
+if (st.positions.some(p => p.sym === pick.sym))
+  continue;
+
+const stake=50;
+
+const exposure=st.positions.reduce(
+  (total,p) => total + Number(p.cost || 0),
+  0
+);
+
+if (exposure + stake*(1+FEE) > 150.15 + 0.000001) {
+  st.diagnostic='LIMITE DE EXPOSICAO FICTICIA';
+  break;
+}
+
+const entry=q.ask*(1+SLIP);
+
       const qty=stake/entry;
       const cost=stake*(1+FEE);
 
@@ -871,9 +897,15 @@ async function scan() {
       st.diagnostic='COMPRA FICTICIA '+pick.sym+
         ' 50 USDT | Nota '+pick.score;
 
-      log(st.diagnostic,'buy');
-      await save();
-      return;
+      
+log(st.diagnostic,'buy');
+await save();
+
+if (st.positions.length >= st.settings.maxPositions)
+  break;
+
+continue;
+
     } catch(e) {
       st.lastError=e.message;
       log('Entrada recusada: '+e.message,'warning');
