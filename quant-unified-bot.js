@@ -106,7 +106,7 @@ const DEFAULT = {
   goal:30,
   lossLimit:20,
   maxLosses:3,
-  maxPositions:1,
+  maxPositions:3,
   start:'09:00',
   stopPct:1,
   targetPct:0.7
@@ -322,7 +322,7 @@ async function load() {
                      maxLosses: Number.isInteger(old.settings?.maxLosses) &&
              old.settings.maxLosses >= 0 && old.settings.maxLosses <= 20
                ? old.settings.maxLosses : 3,
-          maxPositions: 1
+          maxPositions: 3
         },
         usedSignals: old.usedSignals || {},
         cooldowns: old.cooldowns || {},
@@ -1053,7 +1053,7 @@ async function handle(req,res,url) {
        if(!Number.isInteger(maxLosses) || ![0,3,5,10,20].includes(maxLosses))
          throw Error('Escolha uma trava valida: 0, 3, 5, 10 ou 20');
        st.settings.maxLosses=maxLosses;
-      st.settings.maxPositions=1;
+      st.settings.maxPositions=3;
       st.settings.start=data.start;
 
       log('Parametros V5.2 salvos');
