@@ -677,7 +677,27 @@
       })
     );
 
-  setInterval(refresh, 15000);
+  
+ // Atualização normal enquanto a tela está aberta.
+setInterval(() => {
+  if (!document.hidden) refresh();
+}, 15000);
+
+// Reconecta quando o usuário volta ao aplicativo.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refresh();
+});
+
+// Reconecta ao voltar para a aba.
+window.addEventListener('pageshow', refresh);
+window.addEventListener('focus', refresh);
+
+// Reconecta quando a internet retorna.
+window.addEventListener('online', refresh);
+
+// Primeira conexão.
+refresh();
+
 
   refresh();
 })();
