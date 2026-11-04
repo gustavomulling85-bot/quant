@@ -699,5 +699,5 @@ window.addEventListener('online', refresh);
 refresh();
 
 
-  refresh();
+  
 })();
