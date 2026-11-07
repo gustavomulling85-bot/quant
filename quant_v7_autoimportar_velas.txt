@@ -1,0 +1,39 @@
+// QUANT V7 - SINCRONIZACAO HORARIA DE VELAS (APENAS PESQUISA)
+// Adicione este bloco AO FINAL de server.js, depois de UNIFIED.start();
+// Usa o importador ja existente, sem colocar chaves do Supabase no navegador.
+const V7_SYNC_EVERY_MS = 60 * 60 * 1000;
+let v7SyncCallInProgress = false;
+async function quantV7SyncCandles() {
+  if (v7SyncCallInProgress || server.v7Job?.running) return;
+  if (!process.env.QUANT_ACCESS_PIN) {
+    console.error('QUANT_V7_SYNC: PIN interno ausente');
+    return;
+  }
+  v7SyncCallInProgress = true;
+  try {
+    const response = await fetch(
+      'http://127.0.0.1:' + PORT + '/api/quant-v7/auto-start',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-quant-pin': process.env.QUANT_ACCESS_PIN
+        },
+        body: JSON.stringify({scope: 'ALL'}),
+        signal: AbortSignal.timeout(20000)
+      }
+    );
+    if (response.status !== 202 && response.status !== 409) {
+      const body = await response.text();
+      console.error('QUANT_V7_SYNC: ' + response.status + ' ' + body.slice(0,150));
+    } else if (response.status === 202) {
+      console.log('QUANT_V7_SYNC: atualizacao das 20 moedas iniciada');
+    }
+  } catch (error) {
+    console.error('QUANT_V7_SYNC: ' + error.message);
+  } finally {
+    v7SyncCallInProgress = false;
+  }
+}
+setTimeout(quantV7SyncCandles, 20000).unref?.();
+setInterval(quantV7SyncCandles, V7_SYNC_EVERY_MS).unref?.();
