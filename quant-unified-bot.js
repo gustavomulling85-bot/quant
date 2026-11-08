@@ -686,10 +686,14 @@ async function scan() {
           return {sym:a.sym,approved:false,score:0,
             why:'Liquidez ou spread',checks:{}};
 
-        const [one,five]=await Promise.all([
-          candles(a.sym,'1m'),
-          candles(a.sym,'5m')
-        ]);
+        
+const [one,five,fifteen,hour]=await Promise.all([
+  candles(a.sym,'1m'),
+  candles(a.sym,'5m'),
+  candles(a.sym,'15m'),
+  candles(a.sym,'1h')
+]);
+
 
         return {
           sym:a.sym,
