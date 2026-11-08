@@ -695,12 +695,28 @@ const [one,five,fifteen,hour]=await Promise.all([
 ]);
 
 
-        return {
-          sym:a.sym,
-          ask:a.quote.ask,
-          spread:a.spread,
-          ...analyze(one,five)
-        };
+        
+const signal = V9.analyze(
+  one, five, fifteen, hour, a.quote
+);
+
+return {
+  sym: a.sym,
+  ask: a.quote.ask,
+  spread: a.spread,
+  approved: false,
+  score: signal.confidence_score,
+  why: signal.reason,
+  checks: {},
+  setup: 'liquidity-v9',
+  signalTime: one.at(-1)?.t,
+  signalCloseTime: one.at(-1)?.end,
+  v9Action: signal.action,
+  targetPrice: signal.take_profit,
+  stopPrice: signal.stop_loss,
+  riskReward: signal.risk_reward_ratio
+};
+
       })
     );
 
