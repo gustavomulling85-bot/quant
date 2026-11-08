@@ -973,7 +973,17 @@ async function cycle() {
     await v61flush();
     await save();
 
-    const reason=blocking();
+    
+if (!st.settings.enabled) {
+  if (Date.now() - st.lastScanMs >= 300000) {
+    st.lastScanMs = Date.now();
+    await scan();
+  }
+  st.diagnostic = 'V9 PESQUISA - SEM COMPRAS';
+  await save();
+  return;
+}
+
     if(reason) {
       st.diagnostic=reason;
       await save();
