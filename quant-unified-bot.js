@@ -600,7 +600,29 @@ p.peakNet=Math.max(Number.isFinite(p.peakNet)?p.peakNet:net,net);
 // V6: pior resultado observado, nao interfere na venda.
 p.troughNet=Math.min(Number.isFinite(p.troughNet)?p.troughNet:net,net);
 let reason=null;
-  if(p.setup==='scalping-1m-5m') {
+  
+if (p.setup === 'liquidity-v9') {
+  const breakEven = p.entry * (1 + FEE) /
+    ((1 - FEE) * (1 - SLIP));
+
+  if (q.bid >= p.entry * 1.003 &&
+      Number.isFinite(p.stopPrice)) {
+    p.stopPrice = Math.max(
+      p.stopPrice,
+      breakEven * 1.0001
+    );
+  }
+
+  if (q.bid >= p.targetPrice) {
+    reason = 'V9_TAKE_PROFIT';
+  } else if (q.bid <= p.stopPrice) {
+    reason = 'V9_STOP';
+  } else if (age >= 30 * 60000) {
+    reason = 'V9_TEMPO_30M';
+  }
+
+} else if (p.setup === 'scalping-1m-5m') {
+
     if(net>=(p.targetNet??TARGET_NET))
       reason='LUCRO_LIQUIDO';
     else if(net<=-(p.stopNet??STOP_NET))
