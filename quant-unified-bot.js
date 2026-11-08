@@ -726,7 +726,9 @@ return {
   sym: a.sym,
   ask: a.quote.ask,
   spread: a.spread,
-  approved: false,
+  
+approved: signal.action === 'BUY' && signal.confidence_score >= 85,
+
   score: signal.confidence_score,
   why: signal.reason,
   checks: {},
