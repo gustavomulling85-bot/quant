@@ -435,7 +435,9 @@ limit: ['15m','1h'].includes(interval) ? '240' : '100'
   if(!Array.isArray(rows)) throw Error('Candles invalidos');
   return rows.filter(x=>+x[6]<Date.now()).map(x=>({
     t:+x[0],end:+x[6],
-    o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5]
+    
+o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5],quoteVolume:+x[7],takerBuyQuote:+x[10]
+
   }));
 }
 
