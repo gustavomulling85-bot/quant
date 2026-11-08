@@ -427,7 +427,9 @@ async function candles(sym,interval) {
   const q=new URLSearchParams({
     symbol:sym+'USDT',
     interval,
-    limit:'75'
+    
+limit: ['15m','1h'].includes(interval) ? '240' : '100'
+
   });
   const rows=await binance('klines?'+q);
   if(!Array.isArray(rows)) throw Error('Candles invalidos');
