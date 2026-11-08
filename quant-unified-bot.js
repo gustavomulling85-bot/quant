@@ -984,7 +984,9 @@ if (!st.settings.enabled) {
   return;
 }
 
-    if(reason) {
+    
+const reason=blocking();
+
       st.diagnostic=reason;
       await save();
       return;
