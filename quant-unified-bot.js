@@ -928,9 +928,11 @@ const entry=q.ask*(1+SLIP);
         mark:q.bid,
         openedAt:now(),
         openedMs:Date.now(),
-        setup:'scalping-1m-5m',
-        targetNet:TARGET_NET,
-        stopNet:STOP_NET,
+        
+setup:'liquidity-v9',
+targetPrice:pick.targetPrice,
+stopPrice:pick.stopPrice,
+
         peakNet:null,
         troughNet:null,
         memoryFeatures:pick.memoryFeatures||null,
