@@ -977,7 +977,7 @@ async function cycle() {
 
     
 if (!st.settings.enabled) {
-  if (Date.now() - st.lastScanMs >= 300000) {
+  if (Date.now() - st.lastScanMs >= 900000) {
     st.lastScanMs = Date.now();
     await scan();
   }
