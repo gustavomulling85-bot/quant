@@ -1262,6 +1262,9 @@ const V7_SYNC_EVERY_MS = 60 * 60 * 1000;
 let v7SyncCallInProgress = false;
 
 async function quantV7SyncCandles() {
+  
+  if (true) return; // Pausa temporaria para economizar banda
+
   if (v7SyncCallInProgress || server.v7Job?.running) return;
 
   if (!process.env.QUANT_ACCESS_PIN) {
